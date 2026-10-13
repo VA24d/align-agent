@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stalecheck"
+version = "0.1.0"
+description = "Find edits a coding agent made against a stale view of a file, and keep agents' views current with a write-through hook (Claude Code, any hook system, any MCP client, mini-swe-agent)"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+  "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+run = [
+  "mini-swe-agent==2.4.6",
+  "Jinja2==3.1.6",
+  "PyYAML==6.0.3",
+  "pydantic==2.13.4",
+]
+
+[project.scripts]
+stalecheck = "stalecheck.cli:main"
+stalecheck-wt = "stalecheck.writethrough.protocol:main"
+stalecheck-mcp = "stalecheck.writethrough.mcp_server:main"
+stalecheck-claude-hook = "stalecheck.writethrough.claude_code:main"
+stalecheck-hook = "stalecheck.writethrough.hooks:main"
+
+[tool.setuptools.packages.find]
+include = ["stalecheck*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.py"]

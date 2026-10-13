@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [{ "command": "stalecheck-hook cursor" }],
+    "beforeReadFile": [{ "command": "stalecheck-hook cursor" }],
+    "afterFileEdit": [{ "command": "stalecheck-hook cursor" }],
+    "postToolUse": [{ "command": "stalecheck-hook cursor" }]
+  }
+}

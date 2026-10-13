@@ -1,0 +1,2 @@
+#!/bin/sh
+exec stalecheck-hook cline PostToolUse
