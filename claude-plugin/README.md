@@ -1,16 +1,21 @@
 # stalecheck write-through for Claude Code
 
-Claude Code's Edit tool notices when a file changed since Claude read it. A file changed through
-Bash (`sed -i`, a script, a formatter, `git checkout`), or by you in another window, is not
-checked: Claude keeps working from the copy it read, and a later edit by line number or by
+Claude Code tells Claude about a changed file only if Claude last wrote it with Edit or Write, and
+then reports even Claude's own Bash changes as outside edits
+([anthropics/claude-code#81503](https://github.com/anthropics/claude-code/issues/81503)). A file
+Claude only read and then changed through Bash (`sed -i`, a script, a formatter, `git checkout`)
+is not checked: Claude keeps working from the copy it read, and a later edit by line number or by
 remembered text can land in the wrong place. This plugin closes that gap.
 
 - **Write-through.** After every tool call, each file Claude has seen that changed since gets its
   net diff appended to Claude's context, with current line numbers. If a changed definition is
   still used in other files, those uses are listed too. Nothing earlier in the conversation is
   rewritten, so the prompt cache is kept.
-- **Line shifts.** Lines far below a change move without being shown. Each diff ends with a note
-  such as `[LINE SHIFT: 'app.py': lines 15-40 of your last view are now lines 10-35 (-5)]`.
+- **Line numbers.** Lines far below a change move without being shown. Each diff ends with a note
+  that counts from the last time Claude saw the whole file, so offsets from several edits add up:
+  `[LINE NUMBERS: since your last full view of 'app.py': lines 15-40 are now 10-35 (-5)]`.
+  In a 60-run test with Claude Sonnet 5 the note kept accuracy at the plain diff's level and cut
+  re-reads of the file (2.0 against 2.4 per run); a version counted from each previous diff did worse.
 - **Line-number guard.** A `sed -i` addressed by line number, on a file Claude has seen, whose
   lines Claude has not seen numbered as they are now, is refused once. The refusal shows those
   lines as they stand, and Claude reissues the command with the right numbers.
@@ -30,7 +35,7 @@ Requires `python3` (3.8+) and, for the fast path, `git`. No packages to install.
 
 | Variable | Effect |
 |---|---|
-| `STALECHECK_SHIFTS=0` | no line-shift notes |
+| `STALECHECK_SHIFTS=0` | no line-number notes |
 | `STALECHECK_GUARD=0` | no line-number guard |
 | `STALECHECK_TIMING=1` | print the hook's time per call to stderr |
 
@@ -46,7 +51,7 @@ limit for hook context.
 
 - Changes are noticed at the next tool call, not as they happen.
 - The guard reads `sed -i` line addresses. Line edits made by `awk`, `perl -i` or inline scripts
-  are covered by the diff and the shift note, not refused.
+  are covered by the diff and the line-number note, not refused.
 - Compaction or `/clear` empties the record of what Claude has seen, since Claude no longer holds
   those views.
 - State is kept per session under `$CLAUDE_PLUGIN_DATA/sessions/`. Errors go to

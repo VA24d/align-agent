@@ -59,8 +59,8 @@ def default_state_dir():
 
 class State:
     """snapshot.json: path -> [size, mtime_ns] of each workspace file at the last call;
-    ledger.json: path -> {"sha", "regions"}: the version the model last saw and the line ranges it
-    has seen numbered as they are now; written.json: files the model changed; blobs/<sha>: what it saw."""
+    ledger.json: path -> {"sha", "regions", "base"}: the version the model last saw, the line ranges it
+    has seen numbered as they are now, and the version of its last whole-file view; written.json: files the model changed; blobs/<sha>: what it saw."""
 
     def __init__(self, session_id, state_dir=None):
         self.dir = os.path.join(state_dir or default_state_dir(), "sessions", session_id or "default")
@@ -194,11 +194,20 @@ def hunks_and_shifts(old, new):
     return shown, shifts
 
 
-def shift_note(path, shifts, limit=3):
-    lines = [f"lines {i1}-{i2} of your last view are now lines {j1}-{j2} ({d:+d})" for i1, i2, j1, j2, d in shifts[:limit]]
-    if len(shifts) > limit:
-        lines.append(f"and {len(shifts) - limit} more moved stretches")
-    return f"[LINE SHIFT: '{path}': " + "; ".join(lines) + "]"
+def line_number_note(path, base, new, limit=4):
+    """Every stretch of the model's last whole-file view of `path` that has moved since, with its
+    offset. Counted from that one view, so offsets from several writes add up instead of each being
+    stated against the previous block (which, in a 60-run test, led agents to apply a shift twice or
+    miss one; see docs/results/shift_test_anthropic_claude-sonnet-5.md)."""
+    moved = [(i1 + 1, i2, j1 + 1, j2, j1 - i1) for tag, i1, i2, j1, j2 in
+             difflib.SequenceMatcher(None, base.splitlines(), new.splitlines(), autojunk=False).get_opcodes()
+             if tag == "equal" and j1 != i1]
+    if not moved:
+        return ""
+    parts = [f"lines {a}-{b} are now {c}-{d} ({o:+d})" for a, b, c, d, o in moved[:limit]]
+    if len(moved) > limit:
+        parts.append(f"and {len(moved) - limit} more moved stretches")
+    return f"[LINE NUMBERS: since your last full view of '{path}': " + "; ".join(parts) + "]"
 
 
 # ---------------------------------------------------------------- blocks
@@ -239,9 +248,12 @@ def blocks_for(state, root, changed, skip, command="", output="", budget=None):
             parts.append(f"[TAIL DIFF: File '{p}' also changed; re-read it before a line-anchored edit]")
             shown[p] = []
             continue
-        hunks, shifts = hunks_and_shifts(old, new or "")
-        if SHIFTS and shifts:
-            text += "\n" + shift_note(p, shifts)
+        hunks, _ = hunks_and_shifts(old, new or "")
+        if SHIFTS and new is not None:
+            base = state.blob(state.ledger[p].get("base") or "") if state.ledger[p].get("base") else None
+            note = line_number_note(p, base if base is not None else old, new)
+            if note:
+                text += "\n" + note
         clipped = clip_block(text, room)
         shown[p] = hunks if clipped == text else []  # a cut block shows only part of its hunks
         parts.append(clipped)
@@ -282,7 +294,9 @@ def see(state, root, rel, regions=None, after_write=False):
         prev = state.blob(old["sha"])
         if prev is not None:
             keep = remap(prev, text, old.get("regions") or [])
-    state.ledger[rel] = {"sha": sha, "regions": merge(keep + shown)}
+    # base: the version the model last saw whole; line-number notes count from it
+    base = sha if (regions is None and not after_write) else ((old or {}).get("base") or (old or {}).get("sha"))
+    state.ledger[rel] = {"sha": sha, "regions": merge(keep + shown), "base": base}
 
 
 # ---------------------------------------------------------------- reads through the shell
