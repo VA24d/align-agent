@@ -274,3 +274,19 @@ def apply_tail_diff(
             transformed.append({"role": "user", "content": forwarding_text.strip()})
 
     return transformed
+
+
+def line_number_note(path, base, new, limit=4):
+    """Every stretch of the model's last whole-file view of `path` that has moved since, with its
+    offset. Counted from that one view, so offsets from several writes add up instead of each being
+    stated against the previous block (which, in a 60-run test, led agents to apply a shift twice or
+    miss one; see docs/results/shift_test_anthropic_claude-sonnet-5.md)."""
+    moved = [(i1 + 1, i2, j1 + 1, j2, j1 - i1) for tag, i1, i2, j1, j2 in
+             difflib.SequenceMatcher(None, base.splitlines(), new.splitlines(), autojunk=False).get_opcodes()
+             if tag == "equal" and j1 != i1]
+    if not moved:
+        return ""
+    parts = [f"lines {a}-{b} are now {c}-{d} ({o:+d})" for a, b, c, d, o in moved[:limit]]
+    if len(moved) > limit:
+        parts.append(f"and {len(moved) - limit} more moved stretches")
+    return f"[LINE NUMBERS: since your last full view of '{path}': " + "; ".join(parts) + "]"

@@ -23,7 +23,8 @@ def handle(payload):
     """The hook's JSON reply for one event, or None."""
     event = payload.get("hook_event_name")
     root = os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd()
-    with Session(root, payload.get("session_id") or "default") as s:
+    # Claude Code re-sends the changed lines of a file its editor wrote last after a shell change
+    with Session(root, payload.get("session_id") or "default", host_echoes=True) as s:
         if event == "SessionStart":
             # resume keeps what the model saw; a new, cleared, compacted or forked context does not
             s.start(fresh=payload.get("source") in ("startup", "clear", "compact", "fork"))

@@ -39,7 +39,7 @@ if os.path.join(HERE, "_lib") not in sys.path:
 from wt_src.harness.dependency_notice import dependency_notice  # noqa: E402
 from wt_src.harness.lean import redundant_writes  # noqa: E402
 from wt_src.metrics.replay import _live_events  # noqa: E402
-from wt_src.harness.tail_diff import format_line_numbered_diff  # noqa: E402
+from wt_src.harness.tail_diff import format_line_numbered_diff, line_number_note  # noqa: E402
 
 BUDGET = 9000        # Claude Code caps hook context at 10,000 characters; others are similar
 PER_FILE = 3000
@@ -60,7 +60,8 @@ def default_state_dir():
 class State:
     """snapshot.json: path -> [size, mtime_ns] of each workspace file at the last call;
     ledger.json: path -> {"sha", "regions", "base"}: the version the model last saw, the line ranges it
-    has seen numbered as they are now, and the version of its last whole-file view; written.json: files the model changed; blobs/<sha>: what it saw."""
+    has seen numbered as they are now, and the version of its last whole-file view; written.json: files the model changed;
+    echoed.json: files the host's own editor wrote last, whose later shell changes the host reports itself; blobs/<sha>: what it saw."""
 
     def __init__(self, session_id, state_dir=None):
         self.dir = os.path.join(state_dir or default_state_dir(), "sessions", session_id or "default")
@@ -70,6 +71,7 @@ class State:
         self.snapshot = self._load("snapshot.json", None)
         self.ledger = self._load("ledger.json", {})
         self.written = set(self._load("written.json", []))
+        self.echoed = set(self._load("echoed.json", []))
 
     def _load(self, name, default):
         try:
@@ -79,7 +81,7 @@ class State:
             return default
 
     def save(self):
-        for name, obj in (("snapshot.json", self.snapshot), ("ledger.json", self.ledger), ("written.json", sorted(self.written))):
+        for name, obj in (("snapshot.json", self.snapshot), ("ledger.json", self.ledger), ("written.json", sorted(self.written)), ("echoed.json", sorted(self.echoed))):
             tmp = os.path.join(self.dir, name + ".tmp")
             with open(tmp, "w") as f:
                 json.dump(obj, f)
@@ -192,22 +194,6 @@ def hunks_and_shifts(old, new):
         if tag == "equal" and j1 != i1 and not covered(shown, j1 + 1, j2):
             shifts.append((i1 + 1, i2, j1 + 1, j2, j1 - i1))
     return shown, shifts
-
-
-def line_number_note(path, base, new, limit=4):
-    """Every stretch of the model's last whole-file view of `path` that has moved since, with its
-    offset. Counted from that one view, so offsets from several writes add up instead of each being
-    stated against the previous block (which, in a 60-run test, led agents to apply a shift twice or
-    miss one; see docs/results/shift_test_anthropic_claude-sonnet-5.md)."""
-    moved = [(i1 + 1, i2, j1 + 1, j2, j1 - i1) for tag, i1, i2, j1, j2 in
-             difflib.SequenceMatcher(None, base.splitlines(), new.splitlines(), autojunk=False).get_opcodes()
-             if tag == "equal" and j1 != i1]
-    if not moved:
-        return ""
-    parts = [f"lines {a}-{b} are now {c}-{d} ({o:+d})" for a, b, c, d, o in moved[:limit]]
-    if len(moved) > limit:
-        parts.append(f"and {len(moved) - limit} more moved stretches")
-    return f"[LINE NUMBERS: since your last full view of '{path}': " + "; ".join(parts) + "]"
 
 
 # ---------------------------------------------------------------- blocks
@@ -431,8 +417,11 @@ class Session:
     """One agent session's write-through state. Use as a context manager: the state is locked
     while open (parallel tool calls run their hooks in parallel) and saved on exit."""
 
-    def __init__(self, root, session_id="default", state_dir=None, budget=None):
+    def __init__(self, root, session_id="default", state_dir=None, budget=None, host_echoes=False):
         self.root = os.path.realpath(root)
+        # host_echoes: the host re-sends the changed lines of a file its own editor wrote last when
+        # a shell command changes it (Claude Code does), so a block for that change would repeat it
+        self.host_echoes = host_echoes
         self.state = State(session_id, state_dir)
         self.budget = budget or BUDGET  # characters an agent accepts per tool call
         if self.state.snapshot is None:
@@ -451,7 +440,7 @@ class Session:
         """A session (re)starts. fresh: the model holds none of its earlier views (a new session,
         a cleared or compacted context)."""
         if fresh or self.state.snapshot is None:
-            self.state.ledger, self.state.written = {}, set()
+            self.state.ledger, self.state.written, self.state.echoed = {}, set(), set()
         self.state.snapshot = scan(self.root)
 
     def read(self, path, lo=None, hi=None):
@@ -465,6 +454,8 @@ class Session:
         if rel:
             see(self.state, self.root, rel, [], after_write=True)
             self.state.written.add(rel)
+            if self.host_echoes:
+                self.state.echoed.add(rel)
         return rel
 
     def before(self, command):
@@ -487,6 +478,11 @@ class Session:
             skip.add(self.authored(a))
         reads = shell_reads(self.root, command, output) if command else []
         skip |= {p for p, regions in reads if regions is None}  # printed whole: nothing to add
+        if command and self.host_echoes:
+            for p in changed & self.state.echoed:  # the host reports this change; the shell is now the last writer
+                see(self.state, self.root, p, [], after_write=True)
+                skip.add(p)
+            self.state.echoed -= changed
         text, shown = blocks_for(self.state, self.root, changed, skip, command or "", output if command else "", self.budget)
         for p, hunks in shown.items():
             see(self.state, self.root, p, hunks, after_write=True)

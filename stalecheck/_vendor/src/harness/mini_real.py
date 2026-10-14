@@ -57,12 +57,15 @@ from .arms import (
     InterventionArm,
     apply_intervention_arm,
     synced_context_view,
+    LEAN_ARMS,
+    SYNC_HEADER,
     SYNC_WIDE_MAX_CHARS,
     SYNC_WIDE_MAX_FILE_CHARS,
 )
 from .completion import post_completion
 from .dependency_notice import NOTICE_VERSION, committed, dependency_notice
 from .lean import redundant_writes
+from .tail_diff import line_number_note
 from .miniswe_scaffold import MiniSWEScaffold
 
 logger = logging.getLogger("mini_real")
@@ -511,10 +514,16 @@ class PostQodeModel(TextChatModel):
             # the cache and only the new turn is written. That holds only
             # while the request is append-only, which compaction under a
             # small window is not.
+            # The synced-context arm's block changes every step, so its
+            # breakpoint goes before the block, which is sent as a second part.
             sent = payload["messages"]
             for i in {0, len(sent) - 1}:
-                sent[i] = {**sent[i], "content": [{"type": "text", "text": str(sent[i]["content"]),
-                                                   "cache_control": {"type": "ephemeral"}}]}
+                text = str(sent[i]["content"])
+                cut = text.find("\n\n" + SYNC_HEADER) if i else -1
+                parts = [{"type": "text", "text": text[:cut] if cut >= 0 else text, "cache_control": {"type": "ephemeral"}}]
+                if cut >= 0:
+                    parts.append({"type": "text", "text": text[cut:]})
+                sent[i] = {**sent[i], "content": parts}
         return payload
 
     def query(self, messages: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
@@ -657,6 +666,15 @@ class FreshnessAgent(DefaultAgent):
         self._dep_cache: Dict[str, str] = {}
         # Lean diff: scripts the agent saved, so a later run of one is read as the edit it makes.
         self._lean_scripts: Dict[str, str] = {}
+        # Line-number note: each file as the agent last read it, the view its line numbers come from.
+        self._line_base: Dict[str, str] = {}
+
+    def _disk_text(self, rel: str) -> Optional[str]:
+        try:
+            with open(os.path.join(self.workspace_dir, rel), "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except OSError:
+            return None
 
     # --- context transformation ----------------------------------------------
 
@@ -668,7 +686,7 @@ class FreshnessAgent(DefaultAgent):
                 plain, self.instr.freshness_hook.bindings, self.workspace_dir,
                 **({"max_chars": SYNC_WIDE_MAX_CHARS, "max_file_chars": SYNC_WIDE_MAX_FILE_CHARS} if wide else {}))
             last = str(view[-1].get("content", "")) if view else ""
-            cut = last.find("[SYNCED CONTEXT:")
+            cut = last.find(SYNC_HEADER)
             self._synced_chars = len(last) - cut if cut >= 0 else 0
             return view
         return apply_intervention_arm(
@@ -830,7 +848,7 @@ class FreshnessAgent(DefaultAgent):
 
         # Arm 9 (Write-Through Viewport): Append viewport echo and refresh binding
         lean_skipped: List[str] = []
-        if self.arm == InterventionArm.ARM_13_WRITE_THROUGH_DIFF_LEAN and writes:
+        if self.arm in LEAN_ARMS and writes:
             # No block for a write that tells the agent nothing new; its
             # binding is still refreshed, so the next diff of that file starts
             # from what the agent now knows.
@@ -840,12 +858,25 @@ class FreshnessAgent(DefaultAgent):
         shown_writes = [w for w in writes if w not in lean_skipped]
         if self.arm in WRITE_THROUGH_ARMS and shown_writes:
             viewport, shown = self.instr._viewport_blocks(shown_writes, before_contents=before_contents)
+            if viewport and self.arm == InterventionArm.ARM_14_WRITE_THROUGH_DIFF_LINES:
+                for w_file in shown:
+                    base = self._line_base.get(w_file, before_contents.get(w_file))
+                    now = self._disk_text(w_file)
+                    note = line_number_note(w_file, base, now) if base is not None and now is not None else ""
+                    if note:
+                        viewport += "\n" + note
             if viewport:
                 output += viewport
                 obs_text += viewport
                 self._append_to_observation(observations, viewport)
                 for w_file in shown:
                     self.instr.freshness_hook.register_read(msg_obs_idx, step_id, w_file, obs_text)
+
+        if self.arm == InterventionArm.ARM_14_WRITE_THROUGH_DIFF_LINES:
+            for r_file in reads:  # the agent's line numbers now come from this read
+                now = self._disk_text(r_file)
+                if now is not None:
+                    self._line_base[r_file] = now
 
         dep_record: List[Dict[str, Any]] = []
         if self.arm == InterventionArm.ARM_12_DEPENDENCY_WRITE_THROUGH and writes:

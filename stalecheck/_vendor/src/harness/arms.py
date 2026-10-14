@@ -38,6 +38,7 @@ class InterventionArm(Enum):
     ARM_11_SYNCED_CONTEXT = "synced_context"
     ARM_12_DEPENDENCY_WRITE_THROUGH = "dependency_write_through"
     ARM_13_WRITE_THROUGH_DIFF_LEAN = "write_through_diff_lean"
+    ARM_14_WRITE_THROUGH_DIFF_LINES = "write_through_diff_lines"
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,11 @@ ARM_INFO = {
         ("write_through_diff_lean", "wt_diff_lean"), "WriteThroughDiffLean",
         "Write-through diff, without a block for writes that tell the agent nothing new: whole files it "
         "typed itself, files the same command printed after writing, and patch.txt."),
+    InterventionArm.ARM_14_WRITE_THROUGH_DIFF_LINES: ArmInfo(
+        "tool_boundary", "Write-through diff (lean) with line numbers", "WT diff lines",
+        ("write_through_diff_lines", "wt_diff_lines"), "WriteThroughDiffLines",
+        "The lean write-through diff, plus a note of every stretch of the file that moved since the agent "
+        "last read it, with its offset, as the shipped hook does (tail_diff.line_number_note)."),
 }
 
 # Table and figure order: family by family, as listed above.
@@ -205,20 +211,27 @@ ARM_REMEDIATION = {
     InterventionArm.ARM_11_SYNCED_CONTEXT: ArmRemediation(forwards=True),
     InterventionArm.ARM_12_DEPENDENCY_WRITE_THROUGH: ArmRemediation(forwards=True),
     InterventionArm.ARM_13_WRITE_THROUGH_DIFF_LEAN: ArmRemediation(forwards=True),
+    InterventionArm.ARM_14_WRITE_THROUGH_DIFF_LINES: ArmRemediation(forwards=True),
 }
 
 # Arms that append the written file's state to the step's own output.
 WRITE_THROUGH_ARMS = (InterventionArm.ARM_9_WRITE_THROUGH, InterventionArm.ARM_10_WRITE_THROUGH_DIFF,
                       InterventionArm.ARM_12_DEPENDENCY_WRITE_THROUGH,
-                      InterventionArm.ARM_13_WRITE_THROUGH_DIFF_LEAN)
+                      InterventionArm.ARM_13_WRITE_THROUGH_DIFF_LEAN, InterventionArm.ARM_14_WRITE_THROUGH_DIFF_LINES)
 # Write-through arms whose block is the net diff since the last view.
 DIFF_ARMS = (InterventionArm.ARM_10_WRITE_THROUGH_DIFF, InterventionArm.ARM_12_DEPENDENCY_WRITE_THROUGH,
-             InterventionArm.ARM_13_WRITE_THROUGH_DIFF_LEAN)
+             InterventionArm.ARM_13_WRITE_THROUGH_DIFF_LEAN, InterventionArm.ARM_14_WRITE_THROUGH_DIFF_LINES)
+# Arms that skip the block for writes that tell the agent nothing new (src/harness/lean.py).
+LEAN_ARMS = (InterventionArm.ARM_13_WRITE_THROUGH_DIFF_LEAN, InterventionArm.ARM_14_WRITE_THROUGH_DIFF_LINES)
 
 
 # Synced context (Arm 11). CORVUS injects whole files; a 32K-token backbone
 # cannot hold that on SWE-Bench Pro's large files, so the block is capped and
 # files are shown newest-viewed first, each clipped past SYNC_MAX_FILE_CHARS.
+# Opens the block appended to the newest message. The prompt cache breakpoint
+# goes just before it (PostQodeModel._payload), so the history is cached and
+# only the block is recomputed: CORVUS's layout, history then synced context.
+SYNC_HEADER = "[SYNCED CONTEXT: current contents of the files you have viewed]"
 SYNC_MAX_CHARS = int(os.environ.get("SYNC_MAX_CHARS", 24_000))
 SYNC_MAX_FILE_CHARS = int(os.environ.get("SYNC_MAX_FILE_CHARS", 12_000))
 # Under a large window (over 64K tokens) the arm re-sends whole files, as
@@ -248,8 +261,11 @@ def synced_context_view(messages: List[Dict[str, Any]], bindings: List[Observati
         if b.file_path not in registry:
             registry.append(b.file_path)
     for b in bindings:
-        if b.message_index >= len(transformed) - 1 or b.message_index < 0:
-            continue  # the newest observation is the one the agent is answering
+        # The newest read is elided too, as CORVUS's sync_file returns only a
+        # marker: the file is in the block below, and the history stays
+        # append-only, so the prompt cache can reuse it.
+        if b.message_index >= len(transformed) or b.message_index < 0:
+            continue
         content = str(transformed[b.message_index].get("content", ""))
         # mini-swe-agent wraps a command's output in <returncode>/<output> tags.
         inner = _OUTPUT_TAG.search(content)
@@ -278,7 +294,7 @@ def synced_context_view(messages: List[Dict[str, Any]], bindings: List[Observati
         used += len(block)
     if blocks and transformed and transformed[-1].get("role") in ("user", "tool"):
         transformed[-1]["content"] = (str(transformed[-1].get("content", "")) +
-                                      "\n\n[SYNCED CONTEXT: current contents of the files you have viewed]\n" +
+                                      "\n\n" + SYNC_HEADER + "\n" +
                                       "\n\n".join(blocks))
     return transformed, shown
 
@@ -319,7 +335,7 @@ def apply_intervention_arm(
     if arm in [InterventionArm.ARM_1_CONTROL, InterventionArm.ARM_0_PROMPT_ONLY,
                InterventionArm.ARM_9_WRITE_THROUGH, InterventionArm.ARM_10_WRITE_THROUGH_DIFF,
                InterventionArm.ARM_11_SYNCED_CONTEXT, InterventionArm.ARM_12_DEPENDENCY_WRITE_THROUGH,
-               InterventionArm.ARM_13_WRITE_THROUGH_DIFF_LEAN]:
+               InterventionArm.ARM_13_WRITE_THROUGH_DIFF_LEAN, InterventionArm.ARM_14_WRITE_THROUGH_DIFF_LINES]:
         # Arm 11 builds its prompt with synced_context_view, which needs the
         # workspace; here, as for the others, the history is left unchanged.
         # Re-read reminder, Control, Write-through viewport:
