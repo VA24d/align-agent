@@ -50,7 +50,8 @@ class Server:
         if refusal:
             return refusal, True
         try:
-            r = subprocess.run(command, shell=True, cwd=self.root, capture_output=True, text=True, timeout=timeout)
+            r = subprocess.run(command, shell=True, cwd=self.root, capture_output=True, text=True, timeout=timeout,
+                               stdin=subprocess.DEVNULL)  # stdin carries the MCP protocol; never hand it to a command
             out, err = r.stdout + r.stderr, r.returncode != 0
             out = (out[:MAX_OUTPUT] + f"\n... output cut at {MAX_OUTPUT} characters") if len(out) > MAX_OUTPUT else out
             out += f"\n[exit code {r.returncode}]"
