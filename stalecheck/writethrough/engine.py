@@ -405,7 +405,9 @@ def guard(state, root, command):
         a, b = max(1, lo - 5), min(len(lines), hi + 5, lo + 80)
         body = "\n".join(f"{k:6d}\t{lines[k - 1]}" for k in range(a, b + 1))
         see(state, root, rel, [[a, b]])  # the refusal shows them: a retry with these numbers passes
-        return (f"[STALE LINE NUMBERS] '{rel}' changed since you last saw lines {lo}-{hi} numbered, so they "
+        why = (f"'{rel}' changed since you last saw lines {lo}-{hi} numbered" if entry["sha"] != sha
+               else f"you have not seen lines {lo}-{hi} of '{rel}' with their line numbers")
+        return (f"[STALE LINE NUMBERS] {why}, so they "
                 f"may not be the lines you mean. Here they are as the file stands now (lines {a}-{b}):\n{body}\n"
                 f"Reissue the command with these line numbers if this is what you meant to change.")
     return None

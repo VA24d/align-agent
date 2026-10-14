@@ -23,13 +23,13 @@ remembered text can land in the wrong place. This plugin closes that gap.
 ## Install
 
 ```
-/plugin marketplace add <owner>/stalecheck
+/plugin marketplace add VA24d/stalecheck
 /plugin install stalecheck-write-through@stalecheck
 ```
 
-To try it from a checkout: `claude --plugin-dir tool/claude-plugin`.
+To try it from a checkout: `claude --plugin-dir claude-plugin` (from the repository root).
 
-Requires `python3` (3.8+) and, for the fast path, `git`. No packages to install.
+Requires `python3` (3.10+) and, for the fast path, `git`. No packages to install.
 
 ## Settings (environment variables)
 
