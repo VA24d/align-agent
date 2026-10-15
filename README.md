@@ -29,6 +29,11 @@ pip install git+https://github.com/VA24d/stalecheck   # the write-through engine
 In a 2,000-file repository a call takes well under 0.5 s; in Claude Code a call took about 0.1 s,
 Python start-up included.
 
+To compute diffs, stalecheck keeps a copy of each file the model viewed in its state folder
+(`~/.cache/stalecheck-wt`, or the plugin's data folder), readable only by you. Files named like
+keys, `.env` files and credential stores are never copied or diffed; copies no longer needed are
+deleted after each call, and sessions idle for 7 days are deleted (`STALECHECK_KEEP_DAYS`).
+
 ## Find stale edits in trajectories
 
 ```bash

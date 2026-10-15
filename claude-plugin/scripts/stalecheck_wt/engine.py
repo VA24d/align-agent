@@ -48,6 +48,18 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cach
 CONTEXT = 3          # context lines around a hunk, as in src/harness/tail_diff.py
 SHIFTS = os.environ.get("STALECHECK_SHIFTS", "1") != "0"
 GUARD = os.environ.get("STALECHECK_GUARD", "1") != "0"
+KEEP_DAYS = float(os.environ.get("STALECHECK_KEEP_DAYS", "7"))  # sessions idle longer are deleted
+# files whose text is never stored or diffed: they may hold credentials
+SECRET = re.compile(r"""(?ix)^(?:
+    \.env(?:\..+)? | .+\.(?:pem|key|p12|pfx|jks|keystore|secret|kdbx) | id_(?:rsa|dsa|ecdsa|ed25519)(?:\..+)?
+  | \.(?:netrc|npmrc|pypirc|pgpass) | credentials(?:\..+)? | secrets?(?:\..+)? )$""")
+NOT_SECRET = re.compile(r"(?i)\.(?:example|sample|template|dist)$|\.(?:py|js|ts|go|rs|java|rb|md)$")
+
+
+def is_secret(rel):
+    """A file stalecheck never copies: keys, .env files, credential stores (by name)."""
+    name = os.path.basename(rel)
+    return bool(SECRET.match(name)) and not NOT_SECRET.search(name)
 
 
 # ---------------------------------------------------------------- state
@@ -64,8 +76,10 @@ class State:
     echoed.json: files the host's own editor wrote last, whose later shell changes the host reports itself; blobs/<sha>: what it saw."""
 
     def __init__(self, session_id, state_dir=None):
-        self.dir = os.path.join(state_dir or default_state_dir(), "sessions", session_id or "default")
-        os.makedirs(os.path.join(self.dir, "blobs"), exist_ok=True)
+        sessions = os.path.join(state_dir or default_state_dir(), "sessions")
+        self.dir = os.path.join(sessions, session_id or "default")
+        os.makedirs(os.path.join(self.dir, "blobs"), mode=0o700, exist_ok=True)
+        prune_sessions(sessions, keep=self.dir)
         self._lock = open(os.path.join(self.dir, ".lock"), "w")
         fcntl.flock(self._lock, fcntl.LOCK_EX)  # parallel tool calls run their hooks in parallel
         self.snapshot = self._load("snapshot.json", None)
@@ -86,13 +100,30 @@ class State:
             with open(tmp, "w") as f:
                 json.dump(obj, f)
             os.replace(tmp, os.path.join(self.dir, name))
+        self.drop_unused_blobs()
         fcntl.flock(self._lock, fcntl.LOCK_UN)
+
+    def drop_unused_blobs(self):
+        """Delete stored file copies the ledger no longer points to (old versions, cleared views)."""
+        used = {v for e in self.ledger.values() for v in (e.get("sha"), e.get("base")) if v}
+        bdir = os.path.join(self.dir, "blobs")
+        try:
+            names = os.listdir(bdir)
+        except OSError:
+            return
+        for name in names:
+            if name not in used:
+                try:
+                    os.remove(os.path.join(bdir, name))
+                except OSError:
+                    pass
 
     def put_blob(self, text):
         sha = hashlib.sha256(text.encode("utf-8", "surrogateescape")).hexdigest()
         path = os.path.join(self.dir, "blobs", sha)
         if not os.path.exists(path):
-            with open(path, "w", encoding="utf-8", errors="surrogateescape") as f:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # readable by the user only
+            with open(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
                 f.write(text)
         return sha
 
@@ -102,6 +133,26 @@ class State:
                 return f.read()
         except OSError:
             return None
+
+
+def prune_sessions(sessions, keep=None):
+    """Delete session state (with its stored file copies) idle for more than KEEP_DAYS."""
+    cutoff = time.time() - KEEP_DAYS * 86400
+    try:
+        names = os.listdir(sessions)
+    except OSError:
+        return
+    for name in names:
+        d = os.path.join(sessions, name)
+        if d == keep or not os.path.isdir(d):
+            continue
+        try:
+            last = max(os.path.getmtime(os.path.join(d, f)) for f in os.listdir(d))
+        except (OSError, ValueError):
+            continue
+        if last < cutoff:
+            import shutil
+            shutil.rmtree(d, ignore_errors=True)
 
 
 # ---------------------------------------------------------------- workspace
@@ -265,8 +316,8 @@ def see(state, root, rel, regions=None, after_write=False):
     `regions` are line ranges shown with their current numbers (None: the whole file). After a
     write the model learned of (an Edit it made, a diff block), the lines it knew keep their
     numbers only where the write did not move them."""
-    text = read_text(root, rel)
-    if text is None:
+    text = read_text(root, rel) if not is_secret(rel) else None
+    if text is None:  # gone, binary, too large, or a secrets file: nothing stored, no diffs later
         state.ledger.pop(rel, None)
         return
     sha = state.put_blob(text)

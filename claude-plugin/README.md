@@ -54,7 +54,7 @@ limit for hook context.
   are covered by the diff and the line-number note, not refused.
 - Compaction or `/clear` empties the record of what Claude has seen, since Claude no longer holds
   those views.
-- State is kept per session under `$CLAUDE_PLUGIN_DATA/sessions/`. Errors go to
+- State is kept per session under `$CLAUDE_PLUGIN_DATA/sessions/`. It holds a copy of each file the model viewed (user-only permissions); files named like keys, `.env` files and credential stores are never copied or diffed, copies no longer needed are deleted after each call, and sessions idle for 7 days (`STALECHECK_KEEP_DAYS`) are deleted. Errors go to
   `$CLAUDE_PLUGIN_DATA/errors.log`, and the hook never blocks a session because of its own error.
 
 The diff and the dependency notice are the code from the study behind this tool (`src/harness`,
