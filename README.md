@@ -16,7 +16,7 @@ the command once and shows those lines. Nothing earlier in the conversation is r
 prompt cache is kept.
 
 ```bash
-pip install git+https://github.com/VA24d/stalecheck   # the write-through engine needs no other package
+pip install git+https://github.com/VA24d/stalecheck@v0.1.0   # the write-through engine itself uses only the standard library
 ```
 
 | Agent | Set up |
@@ -37,7 +37,7 @@ deleted after each call, and sessions idle for 7 days are deleted (`STALECHECK_K
 ## Find stale edits in trajectories
 
 ```bash
-pip install git+https://github.com/VA24d/stalecheck
+pip install git+https://github.com/VA24d/stalecheck@v0.1.0
 stalecheck analyze examples/teleport_control.json examples/teleport_diff.json
 ```
 
@@ -74,7 +74,7 @@ stalecheck run --repo DIR --task TEXT_OR_FILE --model NAME --base-url URL \
                [--arm control|viewport|diff|lean|dependency] [--image IMAGE] [--out trajectory.json]
 ```
 
-Needs the `[run]` extra: `pip install 'stalecheck[run] @ git+https://github.com/VA24d/stalecheck'`. Runs mini-swe-agent 2.4.6 against any OpenAI-compatible endpoint. The API key is read from `$OPENAI_API_KEY`, or from the variable that `--api-key-env` names. After each command, the hook finds the files the command changed by content hash and appends one of these to that command's output:
+Needs the `[run]` extra: `pip install 'stalecheck[run] @ git+https://github.com/VA24d/stalecheck@v0.1.0'`. Runs mini-swe-agent 2.4.6 against any OpenAI-compatible endpoint. The API key is read from `$OPENAI_API_KEY`, or from the variable that `--api-key-env` names. After each command, the hook finds the files the command changed by content hash and appends one of these to that command's output:
 
 - `viewport`: a numbered window around each change.
 - `diff`: the net diff since the agent last saw the file.

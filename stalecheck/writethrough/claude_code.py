@@ -9,6 +9,7 @@ model made itself. State goes to $CLAUDE_PLUGIN_DATA, which Claude Code sets for
 
 import json
 import os
+import re
 import sys
 import time
 
@@ -19,12 +20,20 @@ EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 SHELL_TOOLS = {"Bash", "PowerShell"}
 
 
+def session_key(payload):
+    """A subagent has its own context, so its own views: hooks fired inside one carry its agent_id."""
+    key = payload.get("session_id") or "default"
+    if payload.get("agent_id"):
+        key += "-" + str(payload["agent_id"])
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", key)
+
+
 def handle(payload):
     """The hook's JSON reply for one event, or None."""
     event = payload.get("hook_event_name")
     root = os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd()
     # Claude Code re-sends the changed lines of a file its editor wrote last after a shell change
-    with Session(root, payload.get("session_id") or "default", host_echoes=True) as s:
+    with Session(root, session_key(payload), host_echoes=True) as s:
         if event == "SessionStart":
             # resume keeps what the model saw; a new, cleared, compacted or forked context does not
             s.start(fresh=payload.get("source") in ("startup", "clear", "compact", "fork"))

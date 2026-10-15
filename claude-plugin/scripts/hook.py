@@ -3,6 +3,10 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from stalecheck_wt.claude_code import main  # noqa: E402
+try:
+    from stalecheck_wt.claude_code import main  # noqa: E402
+except Exception as e:  # noqa: BLE001  never block the agent: report and let the tool call proceed
+    print(f"stalecheck: disabled ({type(e).__name__}: {e})", file=sys.stderr)
+    sys.exit(0)
 
 sys.exit(main())

@@ -22,7 +22,6 @@ MCP shell tool for any MCP client). State: <state_dir>/sessions/<session>/, see 
 """
 
 import difflib
-import fcntl
 import hashlib
 import json
 import os
@@ -31,6 +30,12 @@ import shlex
 import subprocess
 import sys
 import time
+
+try:
+    import fcntl  # POSIX
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if os.path.join(HERE, "_lib") not in sys.path:
@@ -69,6 +74,31 @@ def default_state_dir():
             or os.path.expanduser("~/.cache/stalecheck-wt"))
 
 
+def lock_file(f):
+    if fcntl:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        return
+    f.seek(0)
+    for _ in range(600):  # msvcrt.locking does not wait; retry for up to a minute
+        try:
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            return
+        except OSError:
+            time.sleep(0.1)
+    raise OSError("stalecheck: session state is locked")
+
+
+def unlock_file(f):
+    if fcntl:
+        fcntl.flock(f, fcntl.LOCK_UN)
+        return
+    f.seek(0)
+    try:
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+    except OSError:
+        pass
+
+
 class State:
     """snapshot.json: path -> [size, mtime_ns] of each workspace file at the last call;
     ledger.json: path -> {"sha", "regions", "base"}: the version the model last saw, the line ranges it
@@ -80,8 +110,8 @@ class State:
         self.dir = os.path.join(sessions, session_id or "default")
         os.makedirs(os.path.join(self.dir, "blobs"), mode=0o700, exist_ok=True)
         prune_sessions(sessions, keep=self.dir)
-        self._lock = open(os.path.join(self.dir, ".lock"), "w")
-        fcntl.flock(self._lock, fcntl.LOCK_EX)  # parallel tool calls run their hooks in parallel
+        self._lock = open(os.path.join(self.dir, ".lock"), "a+")
+        lock_file(self._lock)  # parallel tool calls run their hooks in parallel
         self.snapshot = self._load("snapshot.json", None)
         self.ledger = self._load("ledger.json", {})
         self.written = set(self._load("written.json", []))
@@ -101,7 +131,7 @@ class State:
                 json.dump(obj, f)
             os.replace(tmp, os.path.join(self.dir, name))
         self.drop_unused_blobs()
-        fcntl.flock(self._lock, fcntl.LOCK_UN)
+        unlock_file(self._lock)
 
     def drop_unused_blobs(self):
         """Delete stored file copies the ledger no longer points to (old versions, cleared views)."""

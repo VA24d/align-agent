@@ -1,5 +1,5 @@
 // OpenCode plugin (V1 API, OpenCode 1.x): write-through through the stalecheck-wt command.
-// Copy to .opencode/plugins/ or ~/.config/opencode/plugins/. Needs `pip install git+https://github.com/VA24d/stalecheck`.
+// Copy to .opencode/plugins/ or ~/.config/opencode/plugins/. Needs `pip install git+https://github.com/VA24d/stalecheck@v0.1.0`.
 import { spawnSync } from "node:child_process";
 
 const WT = process.env.STALECHECK_WT || "stalecheck-wt";

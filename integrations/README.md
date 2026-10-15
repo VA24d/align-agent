@@ -1,6 +1,6 @@
 # Using stalecheck write-through with your coding agent
 
-`pip install git+https://github.com/VA24d/stalecheck` provides the commands below; the engine itself needs no other package.
+`pip install git+https://github.com/VA24d/stalecheck@v0.1.0` provides the commands below; the engine itself uses only the standard library.
 Each integration does three things where the agent allows it:
 
 1. **after a tool call**, append the diff of every file the model has seen that changed since
