@@ -1,9 +1,9 @@
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "stalecheck-hook codex" }] }],
-    "PostCompact": [{ "hooks": [{ "type": "command", "command": "stalecheck-hook codex" }] }],
-    "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "stalecheck-hook codex" }] }],
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "align-agent-hook codex" }] }],
+    "PostCompact": [{ "hooks": [{ "type": "command", "command": "align-agent-hook codex" }] }],
+    "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "align-agent-hook codex" }] }],
     "PostToolUse": [{ "matcher": "Bash|apply_patch|Edit|Write",
-                      "hooks": [{ "type": "command", "command": "stalecheck-hook codex", "additionalContextLimit": 0 }] }]
+                      "hooks": [{ "type": "command", "command": "align-agent-hook codex", "additionalContextLimit": 0 }] }]
   }
 }

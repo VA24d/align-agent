@@ -1,4 +1,4 @@
-"""Native hook adapters: `stalecheck-hook <agent> [event]` reads one hook event as JSON on stdin and
+"""Native hook adapters: `align-agent-hook <agent> [event]` reads one hook event as JSON on stdin and
 writes the agent's own reply format on stdout. Field names and reply formats follow each agent's
 documentation as of October 2026 (see tool/integrations/README.md for the sources and configs).
 
@@ -14,7 +14,7 @@ documentation as of October 2026 (see tool/integrations/README.md for the source
                as an argument)
 
 Agents without a hook that can add text after a tool (Goose, Antigravity) use the MCP server
-(stalecheck-mcp) instead. Every adapter fails open: an error is logged and the agent continues.
+(align-agent-mcp) instead. Every adapter fails open: an error is logged and the agent continues.
 """
 
 import json
@@ -129,7 +129,7 @@ def cursor(p, event=None):
             reason = s.before(p.get("command", ""))
             if reason:
                 return {"permission": "deny", "agent_message": reason,
-                        "user_message": "stalecheck: line numbers in this command are out of date; the agent was shown the current lines."}
+                        "user_message": "ALIGN: line numbers in this command are out of date; the agent was shown the current lines."}
             return {"permission": "allow"}
         if event == "beforeReadFile":
             s.read(p.get("file_path"))
@@ -203,7 +203,7 @@ AGENTS = {"claude": lambda p, e=None: claude_handle(p), "codex": codex, "gemini"
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] not in AGENTS:
-        sys.stderr.write("usage: stalecheck-hook {" + ",".join(AGENTS) + "} [event] < event.json\n")
+        sys.stderr.write("usage: align-agent-hook {" + ",".join(AGENTS) + "} [event] < event.json\n")
         return 2
     agent = argv[0]
     event = argv[1] if len(argv) > 1 else None

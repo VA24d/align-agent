@@ -1,4 +1,4 @@
-"""stalecheck: find edits a coding agent made against a stale view of a file (analyze), or run an agent with a hook that prevents them (run)."""
+"""ALIGN: find edits a coding agent made against a stale view of a file (analyze), or run an agent with a hook that prevents them (run)."""
 
 import argparse
 import glob
@@ -79,8 +79,8 @@ def cmd_analyze(args):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="stalecheck", description=__doc__)
-    ap.add_argument("--version", action="version", version=f"stalecheck {__version__}")
+    ap = argparse.ArgumentParser(prog="align-agent", description=__doc__)
+    ap.add_argument("--version", action="version", version=f"align-agent {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("analyze", help="find stale edits in trajectories")
     a.add_argument("paths", nargs="+", help="trajectory files or directories (searched for *.json)")

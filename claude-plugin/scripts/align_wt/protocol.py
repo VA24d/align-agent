@@ -1,4 +1,4 @@
-"""A JSON command for any agent whose hooks can run a program: `stalecheck-wt`.
+"""A JSON command for any agent whose hooks can run a program: `align-agent-wt`.
 
 Reads one event as JSON on stdin and writes one JSON reply on stdout:
 
@@ -49,7 +49,7 @@ def respond(ev):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="stalecheck-wt", description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(prog="align-agent-wt", description=__doc__.split("\n\n")[0])
     ap.add_argument("--deny-exit", type=int, default=0, help="exit status for a refusal (reason on stderr)")
     ap.add_argument("--text", action="store_true", help="write the context as plain text")
     args = ap.parse_args(argv)

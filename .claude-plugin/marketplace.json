@@ -1,11 +1,11 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "stalecheck",
+  "name": "align-agent",
   "description": "Keep Claude's view of your files current after Bash, scripts and formatters change them.",
-  "owner": { "name": "stalecheck" },
+  "owner": { "name": "align-agent" },
   "plugins": [
     {
-      "name": "stalecheck-write-through",
+      "name": "align-write-through",
       "description": "Append the diff of files Claude has seen that changed outside its Edit tool; note line shifts; refuse stale line numbers once.",
       "source": "./claude-plugin",
       "category": "productivity"

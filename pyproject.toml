@@ -3,8 +3,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "stalecheck"
-version = "0.1.0"
+name = "align-agent"
+version = "0.2.0"
 description = "Find edits a coding agent made against a stale view of a file, and keep agents' views current with a write-through hook (Claude Code, any hook system, any MCP client, mini-swe-agent)"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -22,14 +22,14 @@ run = [
 ]
 
 [project.scripts]
-stalecheck = "stalecheck.cli:main"
-stalecheck-wt = "stalecheck.writethrough.protocol:main"
-stalecheck-mcp = "stalecheck.writethrough.mcp_server:main"
-stalecheck-claude-hook = "stalecheck.writethrough.claude_code:main"
-stalecheck-hook = "stalecheck.writethrough.hooks:main"
+align-agent = "align_agent.cli:main"
+align-agent-wt = "align_agent.writethrough.protocol:main"
+align-agent-mcp = "align_agent.writethrough.mcp_server:main"
+align-agent-claude-hook = "align_agent.writethrough.claude_code:main"
+align-agent-hook = "align_agent.writethrough.hooks:main"
 
 [tool.setuptools.packages.find]
-include = ["stalecheck*"]
+include = ["align_agent*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.py"]

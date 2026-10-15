@@ -1,2 +1,2 @@
 #!/bin/sh
-exec stalecheck-hook cline PostToolUse
+exec align-agent-hook cline PostToolUse

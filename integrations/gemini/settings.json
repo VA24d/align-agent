@@ -1,8 +1,8 @@
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "stalecheck-hook gemini" }] }],
-    "PreCompress": [{ "hooks": [{ "type": "command", "command": "stalecheck-hook gemini" }] }],
-    "BeforeTool": [{ "matcher": "run_shell_command", "hooks": [{ "type": "command", "command": "stalecheck-hook gemini" }] }],
-    "AfterTool": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "stalecheck-hook gemini" }] }]
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "align-agent-hook gemini" }] }],
+    "PreCompress": [{ "hooks": [{ "type": "command", "command": "align-agent-hook gemini" }] }],
+    "BeforeTool": [{ "matcher": "run_shell_command", "hooks": [{ "type": "command", "command": "align-agent-hook gemini" }] }],
+    "AfterTool": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "align-agent-hook gemini" }] }]
   }
 }

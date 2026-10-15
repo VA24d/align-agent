@@ -1,4 +1,4 @@
-"""stalecheck run: mini-SWE-agent with the write-through hook, on a local repository.
+"""align-agent run: mini-SWE-agent with the write-through hook, on a local repository.
 
 After every command the hook hashes the workspace, finds the files the command
 changed, and appends to that command's own output either the changed region
@@ -6,7 +6,7 @@ changed, and appends to that command's own output either the changed region
 dependency arm also lists the remaining uses, in other files, of any definition
 the write removed or re-signatured. Nothing earlier in the conversation is
 rewritten, so the prompt prefix stays cacheable. The trajectory is written in
-mini-SWE-agent's format, so `stalecheck analyze` reads it back.
+mini-SWE-agent's format, so `align-agent analyze` reads it back.
 """
 
 import json
@@ -54,7 +54,7 @@ def cmd_run(args):
     except Exception as e:  # the trajectory so far is still worth keeping
         info = {"exit_status": type(e).__name__, "submission": "", "error": str(e)[:500]}
     exit_status, result = info.get("exit_status", ""), info.get("submission", "")
-    out = {"tool": "stalecheck run", "arm": ARMS[args.arm], "model": args.model, "container_workdir":
+    out = {"tool": "align-agent run", "arm": ARMS[args.arm], "model": args.model, "container_workdir":
            args.container_cwd if args.image else os.path.abspath(args.repo), "exit_status": exit_status,
            "result": result, "seconds": round(time.time() - t0, 1), "steps": agent.step_records,
            "messages": agent.messages}

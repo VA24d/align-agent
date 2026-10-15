@@ -72,8 +72,8 @@ def main():
         return 0
     if reply:
         json.dump(reply, sys.stdout)
-    if os.environ.get("STALECHECK_TIMING"):
-        sys.stderr.write(f"stalecheck hook {1000 * (time.perf_counter() - t0):.1f} ms\n")
+    if os.environ.get("ALIGN_TIMING"):
+        sys.stderr.write(f"ALIGN hook {1000 * (time.perf_counter() - t0):.1f} ms\n")
     return 0
 
 

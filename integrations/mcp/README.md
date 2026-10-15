@@ -1,10 +1,10 @@
 # MCP: any client
 
-Run the shell through `stalecheck-mcp` and turn the agent's built-in shell off, so the model uses
+Run the shell through `align-agent-mcp` and turn the agent's built-in shell off, so the model uses
 `run_command` (and `read_file`). Server entry (the key name varies by client):
 
 ```json
-{"mcpServers": {"stalecheck": {"command": "stalecheck-mcp", "env": {"STALECHECK_ROOT": "/path/to/repo"}}}}
+{"mcpServers": {"align-agent": {"command": "align-agent-mcp", "env": {"ALIGN_ROOT": "/path/to/repo"}}}}
 ```
 
 Turning the built-in shell off:

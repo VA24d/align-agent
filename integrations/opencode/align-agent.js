@@ -1,15 +1,15 @@
-// OpenCode plugin (V1 API, OpenCode 1.x): write-through through the stalecheck-wt command.
-// Copy to .opencode/plugins/ or ~/.config/opencode/plugins/. Needs `pip install git+https://github.com/VA24d/stalecheck@v0.1.0`.
+// OpenCode plugin (V1 API, OpenCode 1.x): write-through through the align-agent-wt command.
+// Copy to .opencode/plugins/ or ~/.config/opencode/plugins/. Needs `pip install git+https://github.com/VA24d/align-agent@v0.2.0`.
 import { spawnSync } from "node:child_process";
 
-const WT = process.env.STALECHECK_WT || "stalecheck-wt";
+const WT = process.env.ALIGN_WT || "align-agent-wt";
 
 function wt(event) {
   const r = spawnSync(WT, [], { input: JSON.stringify(event), encoding: "utf8" });
   try { return JSON.parse(r.stdout || "{}"); } catch { return {}; }
 }
 
-export const StaleCheck = async ({ directory }) => ({
+export const Align = async ({ directory }) => ({
   // a sed -i on line numbers the model has not seen as they are now is refused once
   "tool.execute.before": async (input, output) => {
     if (input.tool !== "bash") return;

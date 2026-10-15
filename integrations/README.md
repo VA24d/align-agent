@@ -1,6 +1,6 @@
-# Using stalecheck write-through with your coding agent
+# Using ALIGN write-through with your coding agent
 
-`pip install git+https://github.com/VA24d/stalecheck@v0.1.0` provides the commands below; the engine itself uses only the standard library.
+`pip install git+https://github.com/VA24d/align-agent@v0.2.0` provides the commands below; the engine itself uses only the standard library.
 Each integration does three things where the agent allows it:
 
 1. **after a tool call**, append the diff of every file the model has seen that changed since
@@ -14,18 +14,18 @@ Each integration does three things where the agent allows it:
 
 | Agent | 1 after | 2 reads | 3 refuse | How |
 |---|---|---|---|---|
-| Claude Code | yes | yes | yes | plugin: `/plugin marketplace add VA24d/stalecheck` |
+| Claude Code | yes | yes | yes | plugin: `/plugin marketplace add VA24d/align-agent` |
 | Codex CLI | yes | shell | yes | `codex/hooks.json` → `~/.codex/hooks.json` or `.codex/hooks.json`; trust it with `/hooks` |
 | Gemini CLI | yes | yes | yes | merge `gemini/settings.json` into `.gemini/settings.json` |
 | Cursor (IDE, CLI) | yes | yes | yes | `cursor/hooks.json` → `.cursor/hooks.json` |
-| GitHub Copilot CLI | yes | yes | yes | `copilot/stalecheck.json` → `.github/hooks/` |
-| OpenCode 1.x | yes | yes | yes | `opencode/stalecheck.js` → `.opencode/plugins/` |
+| GitHub Copilot CLI | yes | yes | yes | `copilot/align_agent.json` → `.github/hooks/` |
+| OpenCode 1.x | yes | yes | yes | `opencode/align_agent.js` → `.opencode/plugins/` |
 | Cline | yes | yes | no | `cline/PostToolUse` → `.clinerules/hooks/` (its hooks can only cancel a whole task) |
 | Goose, Antigravity CLI, others | yes | yes | yes | MCP: `mcp/README.md` (their hooks cannot add text after a tool) |
 | Aider | n/a | | | re-reads the files in the chat on every request |
 
-For agents with a hook system not listed here, `stalecheck-wt` takes one JSON event on stdin and
-returns `{"context": ...}` or `{"deny": ...}` (`stalecheck-wt --help`).
+For agents with a hook system not listed here, `align-agent-wt` takes one JSON event on stdin and
+returns `{"context": ...}` or `{"deny": ...}` (`align-agent-wt --help`).
 
 ## Notes per agent (documentation as of October 2026)
 
@@ -51,5 +51,5 @@ returns `{"context": ...}` or `{"deny": ...}` (`stalecheck-wt --help`).
   model after the tool results. Refusing a single command needs a TypeScript plugin, available in the
   SDK and CLI but not yet in VS Code.
 
-The adapters are `stalecheck/writethrough/hooks.py`; each is tested with the agent's documented event
+The adapters are `align_agent/writethrough/hooks.py`; each is tested with the agent's documented event
 payloads (`tests/test_claude_hook.py` in the research repository).

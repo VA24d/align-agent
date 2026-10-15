@@ -51,9 +51,9 @@ PER_FILE = 3000
 MAX_BYTES = 2_000_000
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", "dist", "build"}
 CONTEXT = 3          # context lines around a hunk, as in src/harness/tail_diff.py
-SHIFTS = os.environ.get("STALECHECK_SHIFTS", "1") != "0"
-GUARD = os.environ.get("STALECHECK_GUARD", "1") != "0"
-KEEP_DAYS = float(os.environ.get("STALECHECK_KEEP_DAYS", "7"))  # sessions idle longer are deleted
+SHIFTS = os.environ.get("ALIGN_SHIFTS", "1") != "0"
+GUARD = os.environ.get("ALIGN_GUARD", "1") != "0"
+KEEP_DAYS = float(os.environ.get("ALIGN_KEEP_DAYS", "7"))  # sessions idle longer are deleted
 # files whose text is never stored or diffed: they may hold credentials
 SECRET = re.compile(r"""(?ix)^(?:
     \.env(?:\..+)? | .+\.(?:pem|key|p12|pfx|jks|keystore|secret|kdbx) | id_(?:rsa|dsa|ecdsa|ed25519)(?:\..+)?
@@ -62,7 +62,7 @@ NOT_SECRET = re.compile(r"(?i)\.(?:example|sample|template|dist)$|\.(?:py|js|ts|
 
 
 def is_secret(rel):
-    """A file stalecheck never copies: keys, .env files, credential stores (by name)."""
+    """A file ALIGN never copies: keys, .env files, credential stores (by name)."""
     name = os.path.basename(rel)
     return bool(SECRET.match(name)) and not NOT_SECRET.search(name)
 
@@ -70,8 +70,8 @@ def is_secret(rel):
 # ---------------------------------------------------------------- state
 
 def default_state_dir():
-    return (os.environ.get("STALECHECK_STATE") or os.environ.get("CLAUDE_PLUGIN_DATA")
-            or os.path.expanduser("~/.cache/stalecheck-wt"))
+    return (os.environ.get("ALIGN_STATE") or os.environ.get("CLAUDE_PLUGIN_DATA")
+            or os.path.expanduser("~/.cache/align-agent"))
 
 
 def lock_file(f):
@@ -85,7 +85,7 @@ def lock_file(f):
             return
         except OSError:
             time.sleep(0.1)
-    raise OSError("stalecheck: session state is locked")
+    raise OSError("ALIGN: session state is locked")
 
 
 def unlock_file(f):

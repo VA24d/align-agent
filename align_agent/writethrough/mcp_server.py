@@ -1,4 +1,4 @@
-"""An MCP server whose shell keeps the model's view of its files current: `stalecheck-mcp`.
+"""An MCP server whose shell keeps the model's view of its files current: `align-agent-mcp`.
 
 For any MCP client (an agent, an IDE, a desktop app). Tools:
   run_command(command, timeout?)  runs a shell command in the workspace and returns its output,
@@ -8,7 +8,7 @@ For any MCP client (an agent, an IDE, a desktop app). Tools:
                                   with those lines shown.
   read_file(path, offset?, limit?) returns numbered lines and records what the model saw.
 
-The workspace is $STALECHECK_ROOT or the server's working directory; one session per server
+The workspace is $ALIGN_ROOT or the server's working directory; one session per server
 process. MCP stdio transport: one JSON-RPC message per line on stdin and stdout. No dependencies.
 """
 
@@ -39,7 +39,7 @@ TOOLS = [
 
 class Server:
     def __init__(self, root=None, session=None):
-        self.root = os.path.realpath(root or os.environ.get("STALECHECK_ROOT") or os.getcwd())
+        self.root = os.path.realpath(root or os.environ.get("ALIGN_ROOT") or os.getcwd())
         self.session = session or f"mcp-{uuid.uuid4().hex[:12]}"
         with Session(self.root, self.session) as s:
             s.start(fresh=True)
@@ -86,7 +86,7 @@ class Server:
         if method == "initialize":
             ver = (msg.get("params") or {}).get("protocolVersion") or PROTOCOL
             result = {"protocolVersion": ver, "capabilities": {"tools": {}},
-                      "serverInfo": {"name": "stalecheck", "version": "0.1.0"}}
+                      "serverInfo": {"name": "align-agent", "version": "0.2.0"}}
         elif method == "tools/list":
             result = {"tools": TOOLS}
         elif method == "tools/call":

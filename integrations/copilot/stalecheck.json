@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "hooks": {
-    "sessionStart": [{ "type": "command", "bash": "stalecheck-hook copilot sessionStart" }],
-    "preToolUse": [{ "type": "command", "bash": "stalecheck-hook copilot preToolUse", "matcher": "bash", "timeoutSec": 30 }],
-    "postToolUse": [{ "type": "command", "bash": "stalecheck-hook copilot postToolUse", "timeoutSec": 30 }],
-    "postToolUseFailure": [{ "type": "command", "bash": "stalecheck-hook copilot postToolUseFailure", "timeoutSec": 30 }]
-  }
-}

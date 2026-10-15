@@ -1,14 +1,14 @@
-# stalecheck
+# ALIGN: Agent Line-Index Guard and Notices
 
 A coding agent edits files through what it last saw of them, and its own edits make those views
 out of date. A `sed -i`, a script, a formatter or `git checkout` changes a file the agent read, and
 nothing tells it; a later edit by line number or by remembered text then lands on the wrong lines,
-is applied twice, or misses. `stalecheck` keeps the agent's view current while it works, and finds
+is applied twice, or misses. ALIGN keeps the agent's view current while it works, and finds
 these edits in recorded agent trajectories.
 
 ## Keep your agent's view current
 
-After every tool call, stalecheck appends to what the model sees the diff of each file it has seen
+After every tool call, ALIGN appends to what the model sees the diff of each file it has seen
 that changed since, with current line numbers, a note for each stretch of lines that moved without
 being shown, and the remaining uses in other files of any definition a change removed or
 re-signatured. Before a `sed -i` on line numbers the model has not seen as they are now, it refuses
@@ -16,35 +16,35 @@ the command once and shows those lines. Nothing earlier in the conversation is r
 prompt cache is kept.
 
 ```bash
-pip install git+https://github.com/VA24d/stalecheck@v0.1.0   # the write-through engine itself uses only the standard library
+pip install git+https://github.com/VA24d/align-agent@v0.2.0   # the write-through engine itself uses only the standard library
 ```
 
 | Agent | Set up |
 |---|---|
-| Claude Code | `/plugin marketplace add VA24d/stalecheck`, then `/plugin install stalecheck-write-through@stalecheck` |
+| Claude Code | `/plugin marketplace add VA24d/align-agent`, then `/plugin install align-write-through@align-agent` |
 | Codex CLI, Gemini CLI, Cursor, GitHub Copilot CLI, OpenCode, Cline | the config for your agent in [`integrations/`](integrations/README.md) |
-| Any MCP client (Goose, Antigravity CLI, IDEs, ...) | `stalecheck-mcp` as an MCP server, with the built-in shell turned off ([`integrations/mcp`](integrations/mcp/README.md)) |
-| Your own harness | `stalecheck-wt`: one JSON event on stdin, `{"context": ...}` or `{"deny": ...}` back; or `from stalecheck.writethrough import Session` |
+| Any MCP client (Goose, Antigravity CLI, IDEs, ...) | `align-agent-mcp` as an MCP server, with the built-in shell turned off ([`integrations/mcp`](integrations/mcp/README.md)) |
+| Your own harness | `align-agent-wt`: one JSON event on stdin, `{"context": ...}` or `{"deny": ...}` back; or `from align_agent.writethrough import Session` |
 
 In a 2,000-file repository a call takes well under 0.5 s; in Claude Code a call took about 0.1 s,
 Python start-up included.
 
-To compute diffs, stalecheck keeps a copy of each file the model viewed in its state folder
-(`~/.cache/stalecheck-wt`, or the plugin's data folder), readable only by you. Files named like
+To compute diffs, ALIGN keeps a copy of each file the model viewed in its state folder
+(`~/.cache/align-agent`, or the plugin's data folder), readable only by you. Files named like
 keys, `.env` files and credential stores are never copied or diffed; copies no longer needed are
-deleted after each call, and sessions idle for 7 days are deleted (`STALECHECK_KEEP_DAYS`).
+deleted after each call, and sessions idle for 7 days are deleted (`ALIGN_KEEP_DAYS`).
 
 ## Find stale edits in trajectories
 
 ```bash
-pip install git+https://github.com/VA24d/stalecheck@v0.1.0
-stalecheck analyze examples/teleport_control.json examples/teleport_diff.json
+pip install git+https://github.com/VA24d/align-agent@v0.2.0
+align-agent analyze examples/teleport_control.json examples/teleport_diff.json
 ```
 
-## `stalecheck analyze`
+## `align-agent analyze`
 
 ```
-stalecheck analyze PATH [PATH ...] [--format F] [--cwd DIR] [--json OUT] [--quiet]
+align-agent analyze PATH [PATH ...] [--format F] [--cwd DIR] [--json OUT] [--quiet]
 ```
 
 Reads trajectory files, or directories of them. The format is detected:
@@ -67,14 +67,14 @@ Each command is parsed into file operations: views (`cat`, `sed -n`, `grep -n`, 
 
 The summary reports the stale-edit rate over anchored edits to viewed files, with a 95% Clopper–Pearson interval. `--json` writes every edit.
 
-## `stalecheck run`
+## `align-agent run`
 
 ```
-stalecheck run --repo DIR --task TEXT_OR_FILE --model NAME --base-url URL \
+align-agent run --repo DIR --task TEXT_OR_FILE --model NAME --base-url URL \
                [--arm control|viewport|diff|lean|dependency] [--image IMAGE] [--out trajectory.json]
 ```
 
-Needs the `[run]` extra: `pip install 'stalecheck[run] @ git+https://github.com/VA24d/stalecheck@v0.1.0'`. Runs mini-swe-agent 2.4.6 against any OpenAI-compatible endpoint. The API key is read from `$OPENAI_API_KEY`, or from the variable that `--api-key-env` names. After each command, the hook finds the files the command changed by content hash and appends one of these to that command's output:
+Needs the `[run]` extra: `pip install 'align-agent[run] @ git+https://github.com/VA24d/align-agent@v0.2.0'`. Runs mini-swe-agent 2.4.6 against any OpenAI-compatible endpoint. The API key is read from `$OPENAI_API_KEY`, or from the variable that `--api-key-env` names. After each command, the hook finds the files the command changed by content hash and appends one of these to that command's output:
 
 - `viewport`: a numbered window around each change.
 - `diff`: the net diff since the agent last saw the file.

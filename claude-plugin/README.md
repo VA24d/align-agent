@@ -1,4 +1,4 @@
-# stalecheck write-through for Claude Code
+# ALIGN write-through for Claude Code
 
 Claude Code tells Claude about a changed file only if Claude last wrote it with Edit or Write, and
 then reports even Claude's own Bash changes as outside edits
@@ -23,8 +23,8 @@ remembered text can land in the wrong place. This plugin closes that gap.
 ## Install
 
 ```
-/plugin marketplace add VA24d/stalecheck
-/plugin install stalecheck-write-through@stalecheck
+/plugin marketplace add VA24d/align-agent
+/plugin install align-write-through@align-agent
 ```
 
 To try it from a checkout: `claude --plugin-dir claude-plugin` (from the repository root).
@@ -35,9 +35,9 @@ Requires `python3` (3.10+) and, for the fast path, `git`. No packages to install
 
 | Variable | Effect |
 |---|---|
-| `STALECHECK_SHIFTS=0` | no line-number notes |
-| `STALECHECK_GUARD=0` | no line-number guard |
-| `STALECHECK_TIMING=1` | print the hook's time per call to stderr |
+| `ALIGN_SHIFTS=0` | no line-number notes |
+| `ALIGN_GUARD=0` | no line-number guard |
+| `ALIGN_TIMING=1` | print the hook's time per call to stderr |
 
 ## What it costs
 
@@ -54,7 +54,7 @@ limit for hook context.
   are covered by the diff and the line-number note, not refused.
 - Compaction or `/clear` empties the record of what Claude has seen, since Claude no longer holds
   those views.
-- State is kept per session under `$CLAUDE_PLUGIN_DATA/sessions/`. It holds a copy of each file the model viewed (user-only permissions); files named like keys, `.env` files and credential stores are never copied or diffed, copies no longer needed are deleted after each call, and sessions idle for 7 days (`STALECHECK_KEEP_DAYS`) are deleted. Errors go to
+- State is kept per session under `$CLAUDE_PLUGIN_DATA/sessions/`. It holds a copy of each file the model viewed (user-only permissions); files named like keys, `.env` files and credential stores are never copied or diffed, copies no longer needed are deleted after each call, and sessions idle for 7 days (`ALIGN_KEEP_DAYS`) are deleted. Errors go to
   `$CLAUDE_PLUGIN_DATA/errors.log`, and the hook never blocks a session because of its own error.
 
 The diff and the dependency notice are the code from the study behind this tool (`src/harness`,
