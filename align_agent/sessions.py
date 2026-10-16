@@ -118,6 +118,19 @@ def _text(c):
     return ""
 
 
+HOME_OF = re.compile(r"^(/Users/[^/]+|/home/[^/]+|/root)(?:/|$)")
+TILDE = re.compile(r"(^|[\s=:;|&(<>'\"])~(?=/|$|[\s;|&)'\"])", re.M)
+
+
+def expand_home(script, cwd):
+    """Local sessions run under the user's home, which the audit's parser (written for containers)
+    takes to be /root: expand an unquoted-path `~` to the home that holds the session's cwd."""
+    m = HOME_OF.match(cwd or "")
+    if not m or "~" not in script:
+        return script
+    return TILDE.sub(lambda t: t.group(1) + m.group(1), script)
+
+
 def _step(ops, action, obs, rc, cwd, tool, unit, conv, ts=None, thought=""):
     return {"i": 0, "unit": unit, "conv": conv, "bench": None, "tool": tool, "action": action,
             "thought": thought[-1500:], "obs": obs, "rc": rc, "cwd": cwd, "ran": True, "ops": ops,
@@ -299,7 +312,7 @@ def _cc_ops(call, cwd, known, cov):
         cmd = inp.get("command") or ""
         if not isinstance(cmd, str) or not cmd:
             return []
-        ops, _, info = sp.extract(cmd, cwd, known, persist_cd=False)
+        ops, _, info = sp.extract(expand_home(cmd, cwd), cwd, known, persist_cd=False)
         cov["unparsed"] += bool(info.get("unparsed"))
         m = CC_EXIT.match(res or "")
         rc = int(m.group(1)) if m else (None if res is None or (tur or {}).get("interrupted") else (1 if err else 0))
@@ -545,6 +558,41 @@ def _cx_output(o):
     return o, rc
 
 
+JS_LIT = r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`'
+
+
+def _js_str(tok, src=""):
+    """The value of a JS string token (double, single or backtick quoted, or a name bound to one
+    earlier in `src`); None when it is computed (a template with ${...}, a call, a concatenation)."""
+    tok = tok.strip()
+    if re.fullmatch(r"[A-Za-z_$][\w$]*", tok):
+        m = None
+        for m in re.finditer(r"(?:const|let|var)\s+" + re.escape(tok) + r"\s*=\s*(" + JS_LIT + r")\s*;?", src, re.S):
+            pass
+        return _js_str(m.group(1)) if m else None
+    if len(tok) < 2 or tok[0] != tok[-1] or tok[0] not in "\"'`":
+        return None
+    q, body = tok[0], tok[1:-1]
+    if q == "`" and "${" in body:
+        return None
+    if q == '"':
+        try:
+            return json.loads(tok)
+        except ValueError:
+            return None
+    out, i = [], 0
+    esc = {"n": "\n", "t": "\t", "r": "\r", "0": "\0"}
+    while i < len(body):
+        ch = body[i]
+        if ch == "\\" and i + 1 < len(body):
+            out.append(esc.get(body[i + 1], body[i + 1]))
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _exec_commands(src):
     """(commands, workdir or None, parsed) of a code-mode `exec` script."""
     cmds, parsed = [], True
@@ -565,11 +613,30 @@ def _exec_commands(src):
                 cmds += [(json.loads(x), wd) for x in re.findall(lit, dm.group(1))]
                 continue
         parsed = False
-    for m in re.finditer(r"tools\.apply_patch\(\s*(" + lit + r")", src):
-        cmds.append(("apply_patch " + shlex.quote(json.loads(m.group(1))), None))
+    for m in re.finditer(r"tools\.apply_patch\(\s*(" + JS_LIT + r"|[A-Za-z_$][\w$]*)\s*\)", src, re.S):
+        body = _js_str(m.group(1), src[:m.start()])
+        if body is None:
+            parsed = False
+            continue
+        cmds.append(("apply_patch " + shlex.quote(body), None))
     if not cmds and "tools." in src:
         parsed = False
     return cmds, parsed
+
+
+BSD_SED_ERR = re.compile(r'^sed: (?:\d+: "|-[ei]: |[^:\n]+: (?:No such file|in-place editing only))', re.M)
+
+
+def bsd_sed_outcome(ops, obs):
+    """BSD/macOS sed reports errors as `sed: 1: "script": ...`, which the audit's (GNU) rules do not
+    read: with one sed write in the command, that write did not land."""
+    if not BSD_SED_ERR.search(obs or ""):
+        return
+    sed_w = [o for o in ops if o.get("mech") == "sed" and o["op"] == "W" and o.get("ran")]
+    if len({o["cmd_i"] for o in sed_w}) == 1:
+        for o in sed_w:
+            if o.get("landed") is True:
+                o["landed"], o["ev"] = False, "sed error (BSD, single sed unit)"
 
 
 def adapt_codex(path, cwd=None):
@@ -577,6 +644,7 @@ def adapt_codex(path, cwd=None):
     cov = Counter()
     meta = {"cwd": None, "models": Counter(), "session": None}
     calls, by_id, events = [], {}, {}
+    cm_patches = []  # code-mode apply_patch calls, matched in order to their patch_apply_end events
     conv, unit, after_output = 0, 0, True
     turn_cwd = cwd
     for d, bad in records(path):
@@ -618,7 +686,10 @@ def adapt_codex(path, cwd=None):
             if et == "exec_command_end" and p.get("call_id"):
                 events[p["call_id"]] = {"rc": p.get("exit_code")}
             elif et == "patch_apply_end" and p.get("call_id"):
-                events[p["call_id"]] = {"success": p.get("success")}
+                if p["call_id"] not in by_id and cm_patches:
+                    cm_patches.pop(0)["success"] = p.get("success")
+                else:
+                    events[p["call_id"]] = {"success": p.get("success")}
             cov[f"event:{et}"] += 1
             continue
         if typ != "response_item":
@@ -659,6 +730,8 @@ def adapt_codex(path, cwd=None):
                          "rc": None, "action": cmd, "ts": d.get("timestamp")}
                     calls.append(c)
                     c0 = c0 or c
+                    if cmd.startswith("apply_patch "):
+                        cm_patches.append(c)
                 cov["tool:exec"] += 1
                 if c0 is not None and p.get("call_id"):
                     by_id[p["call_id"]] = c0
@@ -691,17 +764,24 @@ def adapt_codex(path, cwd=None):
         ev = events.get(c["id"]) or {}
         obs = c["out"] or ""
         rc = ev.get("rc", c["rc"])
+        if rc is None and c["script"] and obs:
+            # code-mode output carries no exit code; a tool's own error line ("sed: 1: ...") marks a failure
+            prog = posixpath.basename((c["script"].split() or [""])[0])
+            if prog and re.search(r"^" + re.escape(prog) + r": ", obs, re.M):
+                rc = 1
+                cov["rc_from_error_line"] += 1
         body, pcwd = (c["patch"], cwd_c) if c["patch"] is not None else shell_patch(c["script"], cwd_c)
         if body is not None:
             ops = patch_ops(body, pcwd)
-            patch_outcome(ops, obs, ev.get("success"))
+            patch_outcome(ops, obs, ev.get("success", c.get("success")))
             tool = "apply_patch"
             cov["apply_patch"] += 1
         else:
-            ops, _, info = sp.extract(c["script"], cwd_c, known, persist_cd=False)
+            ops, _, info = sp.extract(expand_home(c["script"], cwd_c), cwd_c, known, persist_cd=False)
             cov["unparsed"] += bool(info.get("unparsed"))
             if ops:
                 shell_outcome(ops, obs, rc, c["script"])
+                bsd_sed_outcome(ops, obs)
             tool = "shell"
         steps.append(_step(ops, c["action"], obs, rc, cwd_c, tool, (c["conv"], c["unit"]), c["conv"], c["ts"]))
     meta["model"] = meta["models"].most_common(1)[0][0] if meta["models"] else ""
