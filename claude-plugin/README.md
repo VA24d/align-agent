@@ -16,7 +16,8 @@ remembered text can land in the wrong place. This plugin closes that gap.
   `[LINE NUMBERS: since your last full view of 'app.py': lines 15-40 are now 10-35 (-5)]`.
   In a 60-run test with Claude Sonnet 5 the note kept accuracy at the plain diff's level and cut
   re-reads of the file (2.0 against 2.4 per run); a version counted from each previous diff did worse.
-- **Line-number guard.** A `sed -i` addressed by line number, on a file Claude has seen, whose
+- **Line-number guard.** An in-place edit addressed by line number (`sed -i`, `perl -i`,
+  `awk -i inplace`, `ed`/`ex`), on a file Claude has seen, whose
   lines Claude has not seen numbered as they are now, is refused once. The refusal shows those
   lines as they stand, and Claude reissues the command with the right numbers.
 
@@ -50,8 +51,9 @@ limit for hook context.
 ## Limits
 
 - Changes are noticed at the next tool call, not as they happen.
-- The guard reads `sed -i` line addresses. Line edits made by `awk`, `perl -i` or inline scripts
-  are covered by the diff and the line-number note, not refused.
+- The guard reads line addresses from `sed`, `perl`, `awk`, `ed` and `ex` in-place edits (BSD and
+  GNU `sed`, heredocs and continued lines included). Line edits made by Python or other inline
+  scripts are covered by the diff and the line-number note, not refused.
 - Compaction or `/clear` empties the record of what Claude has seen, since Claude no longer holds
   those views.
 - State is kept per session under `$CLAUDE_PLUGIN_DATA/sessions/`. It holds a copy of each file the model viewed (user-only permissions); files named like keys, `.env` files and credential stores are never copied or diffed, copies no longer needed are deleted after each call, and sessions idle for 7 days (`ALIGN_KEEP_DAYS`) are deleted. Errors go to

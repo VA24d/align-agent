@@ -11,12 +11,13 @@ these edits in recorded agent trajectories.
 After every tool call, ALIGN appends to what the model sees the diff of each file it has seen
 that changed since, with current line numbers, a note for each stretch of lines that moved without
 being shown, and the remaining uses in other files of any definition a change removed or
-re-signatured. Before a `sed -i` on line numbers the model has not seen as they are now, it refuses
+re-signatured. Before an in-place edit by line number (`sed`, `perl`, `awk`, `ed`, `ex`) on lines the model has
+not seen numbered as they are now, it refuses
 the command once and shows those lines. Nothing earlier in the conversation is rewritten, so the
 prompt cache is kept.
 
 ```bash
-pip install git+https://github.com/VA24d/align-agent@v0.2.0   # the write-through engine itself uses only the standard library
+pip install git+https://github.com/VA24d/align-agent@v0.3.0   # the write-through engine itself uses only the standard library
 ```
 
 | Agent | Set up |
@@ -37,7 +38,7 @@ deleted after each call, and sessions idle for 7 days are deleted (`ALIGN_KEEP_D
 ## Find stale edits in trajectories
 
 ```bash
-pip install git+https://github.com/VA24d/align-agent@v0.2.0
+pip install git+https://github.com/VA24d/align-agent@v0.3.0
 align-agent analyze examples/teleport_control.json examples/teleport_diff.json
 ```
 
@@ -74,7 +75,7 @@ align-agent run --repo DIR --task TEXT_OR_FILE --model NAME --base-url URL \
                [--arm control|viewport|diff|lean|dependency] [--image IMAGE] [--out trajectory.json]
 ```
 
-Needs the `[run]` extra: `pip install 'align-agent[run] @ git+https://github.com/VA24d/align-agent@v0.2.0'`. Runs mini-swe-agent 2.4.6 against any OpenAI-compatible endpoint. The API key is read from `$OPENAI_API_KEY`, or from the variable that `--api-key-env` names. After each command, the hook finds the files the command changed by content hash and appends one of these to that command's output:
+Needs the `[run]` extra: `pip install 'align-agent[run] @ git+https://github.com/VA24d/align-agent@v0.3.0'`. Runs mini-swe-agent 2.4.6 against any OpenAI-compatible endpoint. The API key is read from `$OPENAI_API_KEY`, or from the variable that `--api-key-env` names. After each command, the hook finds the files the command changed by content hash and appends one of these to that command's output:
 
 - `viewport`: a numbered window around each change.
 - `diff`: the net diff since the agent last saw the file.

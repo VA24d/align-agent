@@ -409,11 +409,14 @@ def shell_reads(root, command, output):
 
 # ---------------------------------------------------------------- guard
 
-SED_LINE = re.compile(r"^\s*(\d+)\s*(?:,\s*(\d+|\$)\s*)?!?\s*([acdisy])")
+SED_LINE = re.compile(r"^\s*(\d+)\s*(?:,\s*(\d+|\$)\s*)?!?\s*([acdisyrR])")
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2[ \t]*(?=\n|$)", re.S)
 
 
 def shell_segments(command):
-    """Simple commands of a shell line, split at `&&`, `||`, `;`, `|`, `&` and unquoted newlines."""
+    """Simple commands of a shell line, split at `&&`, `||`, `;`, `|`, `&` and unquoted newlines.
+    Heredoc bodies are dropped and backslash-newline continuations joined first."""
+    command = HEREDOC.sub(lambda m: "<< " + m.group(2), command).replace("\\\n", " ")
     lex = shlex.shlex(command, posix=True, punctuation_chars="();<>|&\n")
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
@@ -448,6 +451,9 @@ def sed_line_edits(command):
                 scripts.append(words[i + 1]); i += 2; continue
             if w.startswith("-i") or w.startswith("--in-place"):
                 inplace = True
+                if w == "-i" and i + 1 < len(words) and words[i + 1] == "":
+                    i += 2  # BSD/macOS sed: -i '' (an empty backup suffix)
+                    continue
             elif w.startswith("-") and len(w) > 1:
                 pass
             elif not scripts and not explicit:
@@ -468,9 +474,74 @@ def sed_line_edits(command):
     return out
 
 
+PERL_LINE = re.compile(r"\$\.\s*(==|>=|<=|>|<|!=)\s*(\d+)")
+AWK_LINE = re.compile(r"\bNR\s*(==|>=|<=|>|<|!=)\s*(\d+)")
+ED_CMD = re.compile(r"^(?:-s?c\s*)?(\d+)\s*(?:,\s*(\d+|\$)\s*)?[acdijmst](?![a-z])")
+
+
+def _bounds(pairs):
+    """Line range from `$. == 10`, `NR >= 10 && NR <= 14` style comparisons (None if unbounded)."""
+    lo, hi = None, None
+    for op, n in pairs:
+        n = int(n)
+        if op == "==":
+            lo, hi = n if lo is None else min(lo, n), n if hi is None else max(hi, n)
+        elif op in (">=", ">"):
+            lo = n + (op == ">")
+        elif op in ("<=", "<"):
+            hi = n - (op == "<")
+        elif op == "!=":  # everything but line n: the line is what the edit aims at
+            lo, hi = n, n
+    if lo is None and hi is not None:
+        lo = 1
+    if lo is not None and hi is None:
+        hi = lo
+    return (lo, hi) if lo is not None and hi >= lo else None
+
+
+def script_line_edits(command):
+    """(file, first line, last line) for in-place edits addressed by line number through
+    `perl -i` (`$.`), `awk -i inplace` (`NR`) and `ed`/`ex` scripts given inline."""
+    out = []
+    for words in shell_segments(command):
+        while words and (words[0] in ("sudo", "command") or "=" in words[0]):
+            words = words[1:]
+        if not words:
+            continue
+        tool = os.path.basename(words[0])
+        if tool == "perl" and any(re.match(r"^-[a-hj-zA-HJ-LN-Z]*i", w) for w in words[1:]):  # -i, -pi, -pie; not -M, -I
+            code = " ".join(w for i, w in enumerate(words[1:], 1) if words[i - 1] in ("-e", "-pe", "-ne", "-lne", "-lpe")
+                            or (words[i - 1].startswith("-") and words[i - 1].rstrip("i").endswith("e")))
+            r = _bounds(PERL_LINE.findall(code))
+            files = [w for w in words[1:] if not w.startswith("-") and w != code and w not in code]
+        elif tool in ("awk", "gawk") and "inplace" in words:
+            prog = next((w for w in words[1:] if not w.startswith("-") and w != "inplace"), "")
+            r = _bounds(AWK_LINE.findall(prog))
+            files = [w for w in words[words.index(prog) + 1:] if not w.startswith("-")] if prog else []
+        elif tool in ("ed", "ex") or (tool in ("vim", "vi") and "-es" in words):
+            # the script comes inline: printf '...' | ed f, ed f <<< $'...', ex -sc '...' f
+            pieces = re.split(r"\\n|\n|\||;", command)
+            pieces += [words[i + 1] for i, w in enumerate(words[:-1]) if w in ("-c", "-sc")]
+            pieces += [w[1:] for w in words if w.startswith("+") and w[1:2].isdigit()]
+            nums = []
+            for piece in pieces:
+                m = ED_CMD.match(re.split(r"['\"]", piece)[-1].strip())
+                if m:
+                    a = int(m.group(1))
+                    nums.append((a, a if not m.group(2) or m.group(2) == "$" else int(m.group(2))))
+            r = (min(a for a, _ in nums), max(b for _, b in nums)) if nums else None
+            files = [w for i, w in enumerate(words[1:], 1) if not w.startswith(("-", "+", "<")) and "\\n" not in w
+                     and "|" not in w and words[i - 1] not in ("<<", "<<<", "<<-")][-1:]
+        else:
+            continue
+        if r:
+            out += [(f, r[0], r[1]) for f in files]
+    return out
+
+
 def guard(state, root, command):
     """A refusal for a line-numbered edit whose lines the model has not seen numbered as they are now."""
-    for f, lo, hi in sed_line_edits(command):
+    for f, lo, hi in sed_line_edits(command) + script_line_edits(command):
         rel = rel_path(root, f)
         entry = state.ledger.get(rel) if rel else None
         if not entry:

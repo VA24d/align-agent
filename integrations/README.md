@@ -1,6 +1,6 @@
 # Using ALIGN write-through with your coding agent
 
-`pip install git+https://github.com/VA24d/align-agent@v0.2.0` provides the commands below; the engine itself uses only the standard library.
+`pip install git+https://github.com/VA24d/align-agent@v0.3.0` provides the commands below; the engine itself uses only the standard library.
 Each integration does three things where the agent allows it:
 
 1. **after a tool call**, append the diff of every file the model has seen that changed since
@@ -9,8 +9,8 @@ Each integration does three things where the agent allows it:
    changed definitions;
 2. **record what the model reads**, through the agent's read tool or `cat`/`sed -n`/`head`/`grep -n`
    in the shell;
-3. **before a shell command**, refuse once a `sed -i` on line numbers the model has not seen as they
-   are now, and show those lines.
+3. **before a shell command**, refuse once an in-place edit by line number (`sed`, `perl`, `awk`, `ed`, `ex`)
+   on lines the model has not seen numbered as they are now, and show those lines.
 
 | Agent | 1 after | 2 reads | 3 refuse | How |
 |---|---|---|---|---|
