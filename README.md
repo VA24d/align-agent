@@ -42,6 +42,13 @@ pip install git+https://github.com/VA24d/align-agent@v0.3.0
 align-agent analyze examples/teleport_control.json examples/teleport_diff.json
 ```
 
+Or, with nothing to install or build (image for amd64 and arm64, examples included):
+
+```bash
+docker run --rm ghcr.io/va24d/align-agent:0.3.0 analyze /opt/align-agent/examples/teleport_control.json
+docker run --rm -v "$PWD:/work" ghcr.io/va24d/align-agent:0.3.0 analyze /work/my_trajectories/
+```
+
 ## `align-agent analyze`
 
 ```
