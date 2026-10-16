@@ -8,4 +8,4 @@ held the view, how the view was delivered, and whether the edit went wrong
 because of it.
 """
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"

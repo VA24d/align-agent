@@ -730,6 +730,9 @@ def bsd_sed_outcome(ops, obs):
                 o["landed"], o["ev"] = False, "sed error (BSD, single sed unit)"
 
 
+CUT_MARK = re.compile(r"…\d+ tokens truncated…")
+
+
 def split_exec_output(src, cmds, out):
     """Per-command (output, exit code) of a code-mode script that ran `cmds` through
     `ARR.map(cmd => tools.exec_command(...))` and printed `text(OUT.map((r, i) => `...${r.output}`)
@@ -775,19 +778,32 @@ def split_exec_output(src, cmds, out):
             pos = hm.end()
     if not any(found):
         return None
+    # Codex shortens a long output by cutting its middle at one marker ("…N tokens truncated…"):
+    # the command before the cut keeps its head, and the last command whose header the cut removed
+    # keeps the tail that runs up to the next header.
+    cut = CUT_MARK.search(out)
     res = []
     for k, hm in enumerate(found):
         if not hm:
             res.append((None, None))
             continue
         nxt = next((f for f in found[k + 1:] if f), None)
-        body = out[hm.end():nxt.start() if nxt else len(out)]
-        if nxt and body.endswith(sep):
-            body = body[:-len(sep)]
+        end = nxt.start() if nxt else len(out)
+        body = out[hm.end():end]
         if k + 1 < len(found) and found[k + 1] is None:
-            body = None  # the cut fell between this header and the next one found
+            # the headers after this one were cut: keep the head up to the marker, if it is here
+            body = out[hm.end():cut.start()] if cut and hm.end() <= cut.start() < end else None
+        elif nxt and body.endswith(sep):
+            body = body[:-len(sep)]
         rc = hm.groupdict().get("rc")
         res.append((body, int(rc) if rc and rc.lstrip("-").isdigit() else None))
+    if cut:
+        nxt_k = next((k for k, f in enumerate(found) if f and f.start() >= cut.end()), None)
+        last = (nxt_k if nxt_k is not None else len(found)) - 1
+        if last >= 0 and found[last] is None:
+            end = found[nxt_k].start() if nxt_k is not None else len(out)
+            tail = out[cut.end():end]
+            res[last] = (tail[:-len(sep)] if nxt_k is not None and tail.endswith(sep) else tail, None)
     return res
 
 
@@ -911,7 +927,9 @@ def adapt_codex(path, cwd=None):
                 split = split_exec_output(c["src"], [g["script"] for g in c["group"]], c["out"])
                 cov["exec_outputs_split" if split else "exec_outputs_unsplit"] += 1
                 if split:
-                    cov["exec_outputs_cut"] += any(o is None for o, _ in split)
+                    cov["exec_outputs_cut"] += bool(CUT_MARK.search(c["out"]))
+                    cov["exec_commands_without_output"] += sum(o is None for o, _ in split)
+                    cov["exec_commands_split"] += len(split)
                     for g, (o, rc) in zip(c["group"], split):
                         g["out"], g["rc"] = (o or "", rc) if o is not None else ("", None)
                         g["cut"] = o is None

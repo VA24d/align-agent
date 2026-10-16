@@ -14,11 +14,11 @@ engine uses only the standard library.
 ### 1. Install the commands
 
 ```bash
-pipx install git+https://github.com/VA24d/align-agent@v0.4.2      # recommended: its own environment, commands on PATH
+pipx install git+https://github.com/VA24d/align-agent@v0.4.3      # recommended: its own environment, commands on PATH
 # or, in a virtual environment:
-python3 -m venv ~/.align && ~/.align/bin/pip install git+https://github.com/VA24d/align-agent@v0.4.2
+python3 -m venv ~/.align && ~/.align/bin/pip install git+https://github.com/VA24d/align-agent@v0.4.3
 export PATH="$HOME/.align/bin:$PATH"                                 # add this line to ~/.zshrc or ~/.bashrc
-align-agent --version                                                # prints: align-agent 0.4.2
+align-agent --version                                                # prints: align-agent 0.4.3
 ```
 
 If the shell says `command not found: align-agent`, the install folder is not on `PATH`: run
@@ -93,7 +93,7 @@ the command once and shows those lines. Nothing earlier in the conversation is r
 prompt cache is kept.
 
 ```bash
-pip install git+https://github.com/VA24d/align-agent@v0.4.2   # the write-through engine itself uses only the standard library
+pip install git+https://github.com/VA24d/align-agent@v0.4.3   # the write-through engine itself uses only the standard library
 ```
 
 | Agent | Set up |
@@ -114,15 +114,15 @@ deleted after each call, and sessions idle for 7 days are deleted (`ALIGN_KEEP_D
 ## Find stale edits in trajectories
 
 ```bash
-pip install git+https://github.com/VA24d/align-agent@v0.4.2
+pip install git+https://github.com/VA24d/align-agent@v0.4.3
 align-agent analyze examples/teleport_control.json examples/teleport_diff.json
 ```
 
 Or, with nothing to install or build (image for amd64 and arm64, examples included):
 
 ```bash
-docker run --rm ghcr.io/va24d/align-agent:0.4.2 analyze /opt/align-agent/examples/teleport_control.json
-docker run --rm -v "$PWD:/work" ghcr.io/va24d/align-agent:0.4.2 analyze /work/my_trajectories/
+docker run --rm ghcr.io/va24d/align-agent:0.4.3 analyze /opt/align-agent/examples/teleport_control.json
+docker run --rm -v "$PWD:/work" ghcr.io/va24d/align-agent:0.4.3 analyze /work/my_trajectories/
 ```
 
 ## `align-agent analyze`
@@ -151,7 +151,7 @@ align-agent analyze ~/.claude/projects/-home-me-myrepo/      # every session of 
 align-agent analyze ~/.codex/sessions/2026/10/ --json codex.json
 ```
 
-Paths resolve against the working directory the log records. In Claude Code, `Read` is a view of the lines it returned, `Edit` and `MultiEdit` are edits anchored on quoted text, `Write` is a whole-file write, and `Bash` goes through the shell parser. Claude Code's changed-file notices count as views. A subagent shares the workspace but not the context, so in the parent session its writes are writes the parent did not see; its own transcript is analyzed as a separate trajectory. In Codex, `apply_patch` hunks are anchored edits, `*** Add File` is a whole-file write, and shell commands (including those a code-mode `exec` script passes to `exec_command`, and patches it passes to `apply_patch`) go through the shell parser. When one script runs several commands and prints their results under headers (`### 1`, `--- 0 ---`, ...), the output is split back per command; a command whose part Codex cut from a long output is left without one. A context compaction starts over: views from before it no longer count. `--json` gives per-session counts of every line and tool the adapters did not map. Not covered yet: a Codex subagent's rollout is analyzed on its own, not as unseen writes in its parent; a script that prints its commands' results without headers keeps one combined output.
+Paths resolve against the working directory the log records. In Claude Code, `Read` is a view of the lines it returned, `Edit` and `MultiEdit` are edits anchored on quoted text, `Write` is a whole-file write, and `Bash` goes through the shell parser. Claude Code's changed-file notices count as views. A subagent shares the workspace but not the context, so in the parent session its writes are writes the parent did not see; its own transcript is analyzed as a separate trajectory. In Codex, `apply_patch` hunks are anchored edits, `*** Add File` is a whole-file write, and shell commands (including those a code-mode `exec` script passes to `exec_command`, and patches it passes to `apply_patch`) go through the shell parser. When one script runs several commands and prints their results under headers (`### 1`, `--- 0 ---`, ...), the output is split back per command. When Codex cuts the middle of a long output (`…N tokens truncated…`), the command before the cut keeps the head of its output, the last command whose header was cut keeps the tail, and commands lost entirely in the cut are left without output. A context compaction starts over: views from before it no longer count. `--json` gives per-session counts of every line and tool the adapters did not map. Not covered yet: a Codex subagent's rollout is analyzed on its own, not as unseen writes in its parent; a script that prints its commands' results without headers keeps one combined output.
 
 Each command is parsed into file operations: views (`cat`, `sed -n`, `grep -n`, editor views, file paths quoted in compiler and test output), anchored edits (`sed` by line or pattern, `str_replace`, Python `.replace`, patches) and whole-file writes. Each view is bound to the version of the file it showed. An anchored edit to a file whose last view no longer matches the file is a **stale edit**. For each one, the output gives the step that held the view, whether that view came from the shell or an editor tool, which unseen writes changed the file, and a class:
 
@@ -169,7 +169,7 @@ align-agent run --repo DIR --task TEXT_OR_FILE --model NAME --base-url URL \
                [--arm control|viewport|diff|lean|dependency] [--image IMAGE] [--out trajectory.json]
 ```
 
-Needs the `[run]` extra: `pip install 'align-agent[run] @ git+https://github.com/VA24d/align-agent@v0.4.2'`. Runs mini-swe-agent 2.4.6 against any OpenAI-compatible endpoint. The API key is read from `$OPENAI_API_KEY`, or from the variable that `--api-key-env` names. After each command, the hook finds the files the command changed by content hash and appends one of these to that command's output:
+Needs the `[run]` extra: `pip install 'align-agent[run] @ git+https://github.com/VA24d/align-agent@v0.4.3'`. Runs mini-swe-agent 2.4.6 against any OpenAI-compatible endpoint. The API key is read from `$OPENAI_API_KEY`, or from the variable that `--api-key-env` names. After each command, the hook finds the files the command changed by content hash and appends one of these to that command's output:
 
 - `viewport`: a numbered window around each change.
 - `diff`: the net diff since the agent last saw the file.
