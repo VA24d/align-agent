@@ -24,6 +24,7 @@ def _audit_dir():
 sys.path.insert(0, _audit_dir())
 
 import deepswe as _atif  # noqa: E402
+from . import sessions as _sess  # noqa: E402
 import extract as _ex  # noqa: E402
 import tarsur as _tc  # noqa: E402
 from materialize import classify  # noqa: E402
@@ -36,10 +37,14 @@ FORMATS = {
     "terminus": "Terminus 2 episodes (prompt/response)",
     "atif": "Harbor ATIF (e.g. DeepSWE leaderboard trials)",
     "toolcalls": "OpenAI-style tool-call messages with a bash tool",
+    "claudecode": "Claude Code session logs (~/.claude/projects/*/*.jsonl)",
+    "codex": "Codex CLI session rollouts (~/.codex/sessions)",
 }
 AGENT = {"mini": "mini-SWE-agent", "sweagent": "SWE-agent", "openhands": "OpenHands", "terminus": "Terminus2",
-         "atif": "mini-SWE-agent (ATIF)", "toolcalls": "tool calls"}
-DEFAULT_CWD = {"mini": "/app", "atif": "/testbed", "toolcalls": "/testbed"}
+         "atif": "mini-SWE-agent (ATIF)", "toolcalls": "tool calls", "claudecode": "Claude Code", "codex": "Codex"}
+# Session logs record their own working directory; "/" is used only when one does not.
+DEFAULT_CWD = {"mini": "/app", "atif": "/testbed", "toolcalls": "/testbed", "claudecode": "/", "codex": "/"}
+SESSIONS = {"claudecode": _sess.adapt_claudecode, "codex": _sess.adapt_codex}
 
 
 def detect(raw):
@@ -65,9 +70,19 @@ def detect(raw):
 
 
 def load(path, fmt=None, cwd=None):
-    """(trajectory record for the replay, format, adapter coverage) for one file."""
+    """(trajectory record for the replay, format, adapter coverage) for one file.
+
+    A JSON Lines file (a Claude Code or Codex session) is detected from the
+    shapes of its first lines; any other file is one JSON document."""
+    if fmt in SESSIONS or (fmt is None and path.endswith(".jsonl")):
+        return _load_session(path, fmt or _sess.sniff(path), cwd)
     with open(path, encoding="utf-8") as f:
-        raw = json.load(f)
+        try:
+            raw = json.load(f)
+        except json.JSONDecodeError:
+            if fmt is None and _sess.sniff(path):
+                return _load_session(path, _sess.sniff(path), cwd)
+            raise
     fmt = fmt or detect(raw)
     if fmt not in FORMATS:
         raise ValueError(f"{path}: unrecognised trajectory format")
@@ -96,6 +111,17 @@ def load(path, fmt=None, cwd=None):
     return t, fmt, dict(cov)
 
 
+def _load_session(path, fmt, cwd):
+    if fmt not in SESSIONS:
+        raise ValueError(f"{path}: unrecognised trajectory format")
+    steps, meta, cov = SESSIONS[fmt](path, cwd=cwd)
+    tid = os.path.splitext(os.path.basename(path))[0]
+    t = {"traj_id": tid, "agent": AGENT[fmt], "model": meta.get("model") or "", "steps": steps, "final_diff": None,
+         "session": meta.get("session")}
+    t["root"] = _sess.root_of(steps, cwd or meta.get("cwd"))
+    return t, fmt, dict(cov)
+
+
 def analyze(t):
     """Opportunities, stale edits and their classes for one loaded trajectory."""
     r = Replay(t).run()
@@ -114,7 +140,7 @@ def analyze(t):
             "went_wrong": cls.startswith("MATERIALIZED"),
             "command": (e.get("action") or "")[:400],
         })
-    return {"trajectory": t["traj_id"], "agent": t["agent"], "steps": len(steps),
+    return {"trajectory": t["traj_id"], "agent": t["agent"], "model": t.get("model") or "", "steps": len(steps),
             "anchored_edits": sum(1 for s in steps for o in s["ops"] if o["op"] == "W" and o.get("kind") == "anchored"),
             "opportunities": len(r.opps), "stale_edits": len(stale), "stale": stale}
 
@@ -124,8 +150,12 @@ def summarize(results):
     stale = sum(r["stale_edits"] for r in results)
     classes = Counter(s["class"] for r in results for s in r["stale"])
     lo, hi = cp_ci(stale, opps) if opps else (None, None)
+    cov = Counter()
+    for r in results:
+        cov.update(r.get("coverage") or {})
     return {"trajectories": len(results), "opportunities": opps, "stale_edits": stale,
             "stale_rate": round(stale / opps, 4) if opps else None, "ci95": [lo, hi],
             "went_wrong": sum(v for k, v in classes.items() if k.startswith("MATERIALIZED")),
             "classes": dict(classes.most_common()),
-            "view_channels": dict(Counter(s["view_channel"] for r in results for s in r["stale"]))}
+            "view_channels": dict(Counter(s["view_channel"] for r in results for s in r["stale"])),
+            "coverage": dict(cov)}

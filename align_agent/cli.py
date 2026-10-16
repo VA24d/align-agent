@@ -15,7 +15,9 @@ from .run import add_parser as add_run
 def _files(paths):
     for p in paths:
         if os.path.isdir(p):
-            yield from sorted(glob.glob(os.path.join(p, "**", "*.json"), recursive=True))
+            # Claude Code keeps an agent-*.meta.json beside each subagent transcript: not a trajectory.
+            yield from sorted(f for ext in ("*.json", "*.jsonl") for f in glob.glob(os.path.join(p, "**", ext), recursive=True)
+                              if not f.endswith(".meta.json"))
         else:
             yield p
 
@@ -28,11 +30,11 @@ def _one(job):
     """Analyze one file; (result, None) or (None, reason it was skipped)."""
     f, fmt, cwd = job
     try:
-        t, fmt, _ = load(f, fmt, cwd)
+        t, fmt, cov = load(f, fmt, cwd)
     except (ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
         return None, (f, str(e)[:120])
     r = analyze(t)
-    r.update(file=f, format=fmt)
+    r.update(file=f, format=fmt, coverage=cov)
     return r, None
 
 
@@ -83,7 +85,7 @@ def main(argv=None):
     ap.add_argument("--version", action="version", version=f"align-agent {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("analyze", help="find stale edits in trajectories")
-    a.add_argument("paths", nargs="+", help="trajectory files or directories (searched for *.json)")
+    a.add_argument("paths", nargs="+", help="trajectory files or directories (searched for *.json and *.jsonl)")
     a.add_argument("--format", choices=sorted(FORMATS), help="skip format detection")
     a.add_argument("--cwd", help="the agent's working directory, for resolving relative paths")
     a.add_argument("--json", help="write per-edit results here")
