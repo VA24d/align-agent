@@ -131,6 +131,83 @@ def expand_home(script, cwd):
     return TILDE.sub(lambda t: t.group(1) + m.group(1), script)
 
 
+ANSI_ESC = {"n": "\n", "t": "\t", "r": "\r", "a": "\a", "b": "\b", "f": "\f", "v": "\v", "e": "\x1b", "E": "\x1b",
+            "\\": "\\", "'": "'", '"': '"', "?": "?"}
+
+
+def _ansi_c(body):
+    out, i = [], 0
+    while i < len(body):
+        ch = body[i]
+        if ch != "\\" or i + 1 == len(body):
+            out.append(ch)
+            i += 1
+            continue
+        nx = body[i + 1]
+        if nx in ANSI_ESC:
+            out.append(ANSI_ESC[nx])
+            i += 2
+        elif nx == "x":
+            m = re.match(r"[0-9A-Fa-f]{1,2}", body[i + 2:])
+            out.append(chr(int(m.group(0), 16)) if m else "\\x")
+            i += 2 + (len(m.group(0)) if m else 0)
+        elif nx in "01234567":
+            m = re.match(r"[0-7]{1,3}", body[i + 1:])
+            out.append(chr(int(m.group(0), 8)))
+            i += 1 + len(m.group(0))
+        else:
+            out.append("\\" + nx)
+            i += 2
+    return "".join(out)
+
+
+def ansi_c_unquote(script):
+    """Rewrite bash ANSI-C strings ($'...') as plain single-quoted strings with the escapes decoded,
+    which the audit's parser reads; quotes and comments elsewhere are left as they are."""
+    if "$'" not in script:
+        return script
+    out, i, q = [], 0, None
+    while i < len(script):
+        ch = script[i]
+        if q == "'":
+            out.append(ch)
+            q = None if ch == "'" else q
+            i += 1
+            continue
+        if q == '"':
+            out.append(ch)
+            if ch == "\\" and i + 1 < len(script):
+                out.append(script[i + 1])
+                i += 2
+                continue
+            q = None if ch == '"' else q
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < len(script):
+            out.append(script[i:i + 2])
+            i += 2
+            continue
+        if ch == "$" and script[i + 1:i + 2] == "'":
+            j = i + 2
+            while j < len(script) and script[j] != "'":
+                j += 2 if script[j] == "\\" else 1
+            if j >= len(script):
+                return script  # unterminated: leave it to the parser
+            out.append(shlex.quote(_ansi_c(script[i + 2:j])))
+            i = j + 1
+            continue
+        if ch in "'\"":
+            q = ch
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def shell_text(script, cwd):
+    """A local session's command as the audit's parser should read it."""
+    return ansi_c_unquote(expand_home(script, cwd))
+
+
 def _step(ops, action, obs, rc, cwd, tool, unit, conv, ts=None, thought=""):
     return {"i": 0, "unit": unit, "conv": conv, "bench": None, "tool": tool, "action": action,
             "thought": thought[-1500:], "obs": obs, "rc": rc, "cwd": cwd, "ran": True, "ops": ops,
@@ -312,7 +389,7 @@ def _cc_ops(call, cwd, known, cov):
         cmd = inp.get("command") or ""
         if not isinstance(cmd, str) or not cmd:
             return []
-        ops, _, info = sp.extract(expand_home(cmd, cwd), cwd, known, persist_cd=False)
+        ops, _, info = sp.extract(shell_text(cmd, cwd), cwd, known, persist_cd=False)
         cov["unparsed"] += bool(info.get("unparsed"))
         m = CC_EXIT.match(res or "")
         rc = int(m.group(1)) if m else (None if res is None or (tur or {}).get("interrupted") else (1 if err else 0))
@@ -341,6 +418,14 @@ def _cc_ops(call, cwd, known, cov):
                  "landed": True, "cmd_i": 0, "verb": "Read"}]
     if name in ("Edit", "MultiEdit"):
         edits = [inp] if name == "Edit" else [e for e in inp.get("edits") or [] if isinstance(e, dict)]
+        if isinstance(tur, dict) and tur.get("userModified"):
+            # the user changed the proposed edit before accepting it: the result holds what was applied
+            cov["user_modified"] += 1
+            if name == "Edit" and isinstance(tur.get("oldString"), str):
+                edits = [{"old_string": tur["oldString"], "new_string": tur.get("newString") or "",
+                          "replace_all": tur.get("replaceAll", inp.get("replace_all"))}]
+            elif isinstance(tur.get("edits"), list):
+                edits = [e for e in tur["edits"] if isinstance(e, dict)] or edits
         if res is None:
             landed, ev = None, "no result on record"
         elif err:
@@ -359,6 +444,9 @@ def _cc_ops(call, cwd, known, cov):
         return ops
     if name == "Write":
         text = inp.get("content")
+        if isinstance(tur, dict) and tur.get("userModified") and isinstance(tur.get("content"), str):
+            cov["user_modified"] += 1
+            text = tur["content"]
         if not isinstance(text, str):
             return []
         landed = None if res is None else not err
@@ -426,7 +514,10 @@ def _cc_read(path, cwd_arg, cov, prefix=""):
                 c["result"], c["is_error"], c["ts_done"] = _text(b.get("content")), bool(b.get("is_error")), d.get("timestamp")
                 tur = d.get("toolUseResult")
                 if len(results) == 1 and isinstance(tur, dict):
-                    c["tur"] = {k: tur[k] for k in ("file", "interrupted", "type") if k in tur}
+                    keep = ("file", "interrupted", "type")
+                    if tur.get("userModified"):
+                        keep += ("userModified", "oldString", "newString", "replaceAll", "edits", "content")
+                    c["tur"] = {k: tur[k] for k in keep if k in tur}
         elif typ == "attachment":
             a = d.get("attachment") if isinstance(d.get("attachment"), dict) else {}
             at = a.get("type")
@@ -553,7 +644,7 @@ def _cx_output(o):
     m = CX_RC.search(o[:400])
     if m:
         rc = int(m.group(1))
-    if re.match(r"^(?:Exit code|Chunk ID|Wall time|Process )", o) and "\nOutput:\n" in o[:600]:
+    if re.match(r"^(?:Exit code|Chunk ID|Wall time|Process |Script completed)", o) and "\nOutput:\n" in o[:600]:
         o = o.split("\nOutput:\n", 1)[1]
     return o, rc
 
@@ -637,6 +728,67 @@ def bsd_sed_outcome(ops, obs):
         for o in sed_w:
             if o.get("landed") is True:
                 o["landed"], o["ev"] = False, "sed error (BSD, single sed unit)"
+
+
+def split_exec_output(src, cmds, out):
+    """Per-command (output, exit code) of a code-mode script that ran `cmds` through
+    `ARR.map(cmd => tools.exec_command(...))` and printed `text(OUT.map((r, i) => `...${r.output}`)
+    .join(SEP))`, found by locating each command's rendered header in order. Codex may prepend a
+    note or cut the middle of a long output; a command whose header is missing gets (None, None).
+    None when the script prints its results any other way."""
+    m = re.search(r"text\(\s*(\w+)\.map\(\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)\s*=>\s*`((?:\\.|[^`\\])*)`\s*\)\s*"
+                  r"\.join\(\s*(" + JS_LIT + r")\s*\)\s*\)", src, re.S)
+    if not m or not out:
+        return None
+    r_, i_, tpl, sep = m.group(2), m.group(3), m.group(4), _js_str(m.group(5))
+    arr = re.search(r"(?:const|let|var)\s+(\w+)\s*=\s*\[", src)
+    pieces = re.split(r"(\$\{[^}]*\})", tpl)
+    outs = [k for k, pc in enumerate(pieces) if pc.replace(" ", "") == "${%s.output}" % r_]
+    if sep is None or len(outs) != 1 or any(pc.strip() for pc in pieces[outs[0] + 1:]):
+        return None  # only templates that end with the output can be split by their headers
+
+    def head(k):
+        rx = ""
+        for pc in pieces[:outs[0]]:
+            if not pc.startswith("${"):
+                rx += re.escape(_js_str("`" + pc + "`") or "")
+                continue
+            e = pc[2:-1].replace(" ", "")
+            im = re.fullmatch(re.escape(i_) + r"(?:\+(\d+))?", e)
+            if im:
+                rx += str(k + int(im.group(1) or 0))
+            elif e in (f"{r_}.exit_code", f"{r_}.exitCode"):
+                rx += r"(?P<rc>-?\d+|null|undefined)"
+            elif arr and e == f"{arr.group(1)}[{i_}]":
+                rx += re.escape(cmds[k])
+            else:
+                return None
+        return rx
+    heads = [head(k) for k in range(len(cmds))]
+    if any(h is None or not h for h in heads):
+        return None
+    found, pos = [], 0
+    for k, h in enumerate(heads):
+        hm = re.compile(r"(?:^|(?<=\n))" + h, re.M).search(out, pos)
+        found.append(hm)
+        if hm:
+            pos = hm.end()
+    if not any(found):
+        return None
+    res = []
+    for k, hm in enumerate(found):
+        if not hm:
+            res.append((None, None))
+            continue
+        nxt = next((f for f in found[k + 1:] if f), None)
+        body = out[hm.end():nxt.start() if nxt else len(out)]
+        if nxt and body.endswith(sep):
+            body = body[:-len(sep)]
+        if k + 1 < len(found) and found[k + 1] is None:
+            body = None  # the cut fell between this header and the next one found
+        rc = hm.groupdict().get("rc")
+        res.append((body, int(rc) if rc and rc.lstrip("-").isdigit() else None))
+    return res
 
 
 def adapt_codex(path, cwd=None):
@@ -735,6 +887,9 @@ def adapt_codex(path, cwd=None):
                 cov["tool:exec"] += 1
                 if c0 is not None and p.get("call_id"):
                     by_id[p["call_id"]] = c0
+                    group = [c for c in calls[len(calls) - len(found):] if not c["script"].startswith("apply_patch ")]
+                    if len(group) > 1 and len(group) == len(found):
+                        c0["group"], c0["src"] = group, p["input"]
                 continue
             cov[f"tool:{name}"] += 1
             if script is None and patch is None:
@@ -752,6 +907,14 @@ def adapt_codex(path, cwd=None):
                 cov["output_without_call"] += 1
                 continue
             c["out"], c["rc"] = _cx_output(p.get("output"))
+            if c.get("group"):
+                split = split_exec_output(c["src"], [g["script"] for g in c["group"]], c["out"])
+                cov["exec_outputs_split" if split else "exec_outputs_unsplit"] += 1
+                if split:
+                    cov["exec_outputs_cut"] += any(o is None for o, _ in split)
+                    for g, (o, rc) in zip(c["group"], split):
+                        g["out"], g["rc"] = (o or "", rc) if o is not None else ("", None)
+                        g["cut"] = o is None
         elif pt == "message":
             if p.get("role") == "user":
                 after_output = True
@@ -777,7 +940,7 @@ def adapt_codex(path, cwd=None):
             tool = "apply_patch"
             cov["apply_patch"] += 1
         else:
-            ops, _, info = sp.extract(expand_home(c["script"], cwd_c), cwd_c, known, persist_cd=False)
+            ops, _, info = sp.extract(shell_text(c["script"], cwd_c), cwd_c, known, persist_cd=False)
             cov["unparsed"] += bool(info.get("unparsed"))
             if ops:
                 shell_outcome(ops, obs, rc, c["script"])

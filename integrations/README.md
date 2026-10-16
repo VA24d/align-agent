@@ -1,6 +1,6 @@
 # Using ALIGN write-through with your coding agent
 
-`pip install git+https://github.com/VA24d/align-agent@v0.4.1` provides the commands below; the engine itself uses only the standard library.
+`pip install git+https://github.com/VA24d/align-agent@v0.4.2` provides the commands below; the engine itself uses only the standard library.
 Each integration does three things where the agent allows it:
 
 1. **after a tool call**, append the diff of every file the model has seen that changed since

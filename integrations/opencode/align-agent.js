@@ -1,5 +1,5 @@
 // OpenCode plugin (V1 API, OpenCode 1.x): write-through through the align-agent-wt command.
-// Copy to .opencode/plugins/ or ~/.config/opencode/plugins/. Needs `pip install git+https://github.com/VA24d/align-agent@v0.4.1`.
+// Copy to .opencode/plugins/ or ~/.config/opencode/plugins/. Needs `pip install git+https://github.com/VA24d/align-agent@v0.4.2`.
 import { spawnSync } from "node:child_process";
 
 const WT = process.env.ALIGN_WT || "align-agent-wt";
