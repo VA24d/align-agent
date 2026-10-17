@@ -14,11 +14,11 @@ engine uses only the standard library.
 ### 1. Install the commands
 
 ```bash
-pipx install git+https://github.com/VA24d/align-agent@v0.4.3      # recommended: its own environment, commands on PATH
+pipx install align-agent                      # recommended: its own environment, commands on PATH
 # or, in a virtual environment:
-python3 -m venv ~/.align && ~/.align/bin/pip install git+https://github.com/VA24d/align-agent@v0.4.3
+python3 -m venv ~/.align && ~/.align/bin/pip install align-agent
 export PATH="$HOME/.align/bin:$PATH"                                 # add this line to ~/.zshrc or ~/.bashrc
-align-agent --version                                                # prints: align-agent 0.4.3
+align-agent --version                                                # prints: align-agent 0.4.4
 ```
 
 If the shell says `command not found: align-agent`, the install folder is not on `PATH`: run
@@ -93,7 +93,7 @@ the command once and shows those lines. Nothing earlier in the conversation is r
 prompt cache is kept.
 
 ```bash
-pip install git+https://github.com/VA24d/align-agent@v0.4.3   # the write-through engine itself uses only the standard library
+pip install align-agent   # the write-through engine itself uses only the standard library
 ```
 
 | Agent | Set up |
@@ -114,21 +114,22 @@ deleted after each call, and sessions idle for 7 days are deleted (`ALIGN_KEEP_D
 ## Find stale edits in trajectories
 
 ```bash
-pip install git+https://github.com/VA24d/align-agent@v0.4.3
-align-agent analyze examples/teleport_control.json examples/teleport_diff.json
+pip install align-agent
+align-agent analyze --examples        # the two example trajectories bundled with the package
+align-agent examples                  # where they are, to open or copy
 ```
 
 Or, with nothing to install or build (image for amd64 and arm64, examples included):
 
 ```bash
-docker run --rm ghcr.io/va24d/align-agent:0.4.3 analyze /opt/align-agent/examples/teleport_control.json
-docker run --rm -v "$PWD:/work" ghcr.io/va24d/align-agent:0.4.3 analyze /work/my_trajectories/
+docker run --rm ghcr.io/va24d/align-agent:0.4.4 analyze /opt/align-agent/examples/teleport_control.json
+docker run --rm -v "$PWD:/work" ghcr.io/va24d/align-agent:0.4.4 analyze /work/my_trajectories/
 ```
 
 ## `align-agent analyze`
 
 ```
-align-agent analyze PATH [PATH ...] [--format F] [--cwd DIR] [--json OUT] [--quiet]
+align-agent analyze [PATH ...] [--examples] [--format F] [--cwd DIR] [--json OUT] [--quiet] [-j N]
 ```
 
 Reads trajectory files, or directories of them. The format is detected:
@@ -169,7 +170,7 @@ align-agent run --repo DIR --task TEXT_OR_FILE --model NAME --base-url URL \
                [--arm control|viewport|diff|lean|dependency] [--image IMAGE] [--out trajectory.json]
 ```
 
-Needs the `[run]` extra: `pip install 'align-agent[run] @ git+https://github.com/VA24d/align-agent@v0.4.3'`. Runs mini-swe-agent 2.4.6 against any OpenAI-compatible endpoint. The API key is read from `$OPENAI_API_KEY`, or from the variable that `--api-key-env` names. After each command, the hook finds the files the command changed by content hash and appends one of these to that command's output:
+Needs the `[run]` extra: `pip install 'align-agent[run]'`. Runs mini-swe-agent 2.4.6 against any OpenAI-compatible endpoint. The API key is read from `$OPENAI_API_KEY`, or from the variable that `--api-key-env` names. After each command, the hook finds the files the command changed by content hash and appends one of these to that command's output:
 
 - `viewport`: a numbered window around each change.
 - `diff`: the net diff since the agent last saw the file.

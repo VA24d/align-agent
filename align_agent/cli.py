@@ -11,6 +11,13 @@ from . import __version__
 from .core import FORMATS, analyze, load, summarize
 from .run import add_parser as add_run
 
+EXAMPLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "examples")
+
+
+def example_files():
+    """The trajectories bundled with the package (two runs of one SWE-Bench Pro task)."""
+    return sorted(glob.glob(os.path.join(EXAMPLES, "*.json")))
+
 
 def _files(paths):
     for p in paths:
@@ -50,7 +57,18 @@ def _analyzed(args):
         yield from pool.imap(_one, jobs, chunksize=8)
 
 
+def cmd_examples(args):
+    for f in example_files():
+        print(f)
+    return 0
+
+
 def cmd_analyze(args):
+    if args.examples:
+        args.paths = list(args.paths) + example_files()
+    if not args.paths:
+        print("align-agent analyze: give trajectory files or directories, or --examples", file=sys.stderr)
+        return 2
     results, skipped, t0 = [], [], time.time()
     for r, skip in _analyzed(args):
         if skip:
@@ -85,13 +103,16 @@ def main(argv=None):
     ap.add_argument("--version", action="version", version=f"align-agent {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("analyze", help="find stale edits in trajectories")
-    a.add_argument("paths", nargs="+", help="trajectory files or directories (searched for *.json and *.jsonl)")
+    a.add_argument("paths", nargs="*", help="trajectory files or directories (searched for *.json and *.jsonl)")
+    a.add_argument("--examples", action="store_true", help="also analyze the example trajectories bundled with the package")
     a.add_argument("--format", choices=sorted(FORMATS), help="skip format detection")
     a.add_argument("--cwd", help="the agent's working directory, for resolving relative paths")
     a.add_argument("--json", help="write per-edit results here")
     a.add_argument("--quiet", action="store_true", help="print the summary only")
     a.add_argument("-j", "--jobs", type=int, default=1, help="analyze this many files in parallel (default 1)")
     a.set_defaults(fn=cmd_analyze)
+    e = sub.add_parser("examples", help="print the paths of the bundled example trajectories")
+    e.set_defaults(fn=cmd_examples)
     add_run(sub)
     args = ap.parse_args(argv)
     return args.fn(args)
