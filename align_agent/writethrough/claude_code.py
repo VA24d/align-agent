@@ -16,7 +16,9 @@ import time
 from .engine import Session, default_state_dir
 
 READ_TOOLS = {"Read"}
-EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+EDIT_TOOLS = {"Edit", "MultiEdit", "NotebookEdit"}
+WRITE_TOOLS = {"Write"}  # the model typed the whole file
+READ_LIMIT = 2000  # lines Read shows when given no offset or limit
 SHELL_TOOLS = {"Bash", "PowerShell"}
 
 
@@ -33,7 +35,8 @@ def handle(payload):
     event = payload.get("hook_event_name")
     root = os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd()
     # Claude Code re-sends the changed lines of a file its editor wrote last after a shell change
-    with Session(root, session_key(payload), host_echoes=True) as s:
+    cwd = payload.get("cwd")  # the shell's directory, which `cd` and worktrees move; the root stays
+    with Session(root, session_key(payload), host_echoes=True, read_limit=READ_LIMIT) as s:
         if event == "SessionStart":
             # resume keeps what the model saw; a new, cleared, compacted or forked context does not
             s.start(fresh=payload.get("source") in ("startup", "clear", "compact", "fork"))
@@ -41,7 +44,7 @@ def handle(payload):
         tool = payload.get("tool_name") or ""
         inp = payload.get("tool_input") or {}
         if event == "PreToolUse":
-            reason = s.before(inp.get("command", "")) if tool in SHELL_TOOLS else None
+            reason = s.before(inp.get("command", ""), cwd=cwd) if tool in SHELL_TOOLS else None
             return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                            "permissionDecisionReason": reason}} if reason else None
         if event not in ("PostToolUse", "PostToolUseFailure"):  # a failed tool can still have changed files
@@ -57,14 +60,15 @@ def handle(payload):
         resp = payload.get("tool_response", payload.get("error"))
         output = "\n".join(str(resp.get(k) or "") for k in ("stdout", "stderr", "output")) if isinstance(resp, dict) else str(resp or "")
         text = s.after(command, output if command else "", read=read, read_range=rng,
-                       authored=path if tool in EDIT_TOOLS and not failed else None)
+                       authored=path if tool in EDIT_TOOLS and not failed else None,
+                       wrote=path if tool in WRITE_TOOLS and not failed else None, cwd=cwd)
         return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}} if text else None
 
 
 def main():
     t0 = time.perf_counter()
     try:
-        reply = handle(json.load(sys.stdin))
+        reply = handle(json.loads(sys.stdin.buffer.read()))  # UTF-8 whatever the locale (Windows)
     except Exception as e:  # noqa: BLE001  never break the session: log and stay silent
         log = os.path.join(default_state_dir(), "errors.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)

@@ -264,7 +264,7 @@ def main(argv=None):
     try:
         if IMPORT_ERROR is not None:
             raise IMPORT_ERROR
-        payload = json.load(sys.stdin)
+        payload = json.loads(sys.stdin.buffer.read())  # UTF-8 whatever the locale (Windows)
         event = event or payload.get("hook_event_name") or payload.get("hookName")
         reply = AGENTS[agent](payload, event)
     except Exception as e:  # noqa: BLE001  fail open
