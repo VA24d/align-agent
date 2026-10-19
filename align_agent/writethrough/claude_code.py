@@ -46,8 +46,9 @@ def handle(payload):
                                            "permissionDecisionReason": reason}} if reason else None
         if event not in ("PostToolUse", "PostToolUseFailure"):  # a failed tool can still have changed files
             return None
+        failed = event == "PostToolUseFailure"  # nothing was shown or written by the tool itself
         path = inp.get("file_path") or inp.get("notebook_path") or inp.get("path")
-        read = path if tool in READ_TOOLS else None
+        read = path if tool in READ_TOOLS and not failed else None
         rng = None
         if read and (inp.get("offset") or inp.get("limit")):
             lo = int(inp.get("offset") or 1)
@@ -56,7 +57,7 @@ def handle(payload):
         resp = payload.get("tool_response", payload.get("error"))
         output = "\n".join(str(resp.get(k) or "") for k in ("stdout", "stderr", "output")) if isinstance(resp, dict) else str(resp or "")
         text = s.after(command, output if command else "", read=read, read_range=rng,
-                       authored=path if tool in EDIT_TOOLS else None)
+                       authored=path if tool in EDIT_TOOLS and not failed else None)
         return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}} if text else None
 
 
