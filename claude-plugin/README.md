@@ -62,6 +62,14 @@ limit for hook context.
 The diff and the dependency notice are the code from the study behind this tool (`src/harness`,
 copied into `scripts/_lib` by `tool/build.sh`).
 
+## Audit your own sessions
+
+`/align-write-through:audit` counts stale edits in `~/.claude/projects` and `~/.codex/sessions` and lists
+the five project folders and sessions with the most. It needs the `align-agent` command; if it is not
+installed, the command installs it once from PyPI into `~/.cache/align-agent/venv` (Python 3.10 or later as
+`python3`, `python` or `py -3`) and upgrades it on later runs. It also works on Windows in Git Bash.
+Errors are printed, not hidden. Nothing leaves the machine.
+
 ## Licence
 
 Apache 2.0.

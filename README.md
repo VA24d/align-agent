@@ -18,7 +18,7 @@ pipx install align-agent                      # recommended: its own environment
 # or, in a virtual environment:
 python3 -m venv ~/.align && ~/.align/bin/pip install align-agent
 export PATH="$HOME/.align/bin:$PATH"                                 # add this line to ~/.zshrc or ~/.bashrc
-align-agent --version                                                # prints: align-agent 0.4.8
+align-agent --version                                                # prints: align-agent 0.4.9
 ```
 
 If the shell says `command not found: align-agent`, the install folder is not on `PATH`: run
@@ -87,7 +87,8 @@ to update or uninstall. ALIGN's state (copies of viewed files, readable only by 
 After every tool call, ALIGN appends to what the model sees the diff of each file it has seen
 that changed since, with current line numbers, a note for each stretch of lines that moved without
 being shown, and the remaining uses in other files of any definition a change removed or
-re-signatured. Before an in-place edit by line number (`sed`, `perl`, `awk`, `ed`, `ex`) on lines the model has
+re-signatured. If a write leaves a Python, Go, JSON or TOML file unparseable, and it parsed
+before, the diff ends with a one-line `[SYNTAX: ...]` note (nothing in your project runs; `ALIGN_SYNTAX=0` turns it off). Before an in-place edit by line number (`sed`, `perl`, `awk`, `ed`, `ex`) on lines the model has
 not seen numbered as they are now, it refuses
 the command once and shows those lines. Nothing earlier in the conversation is rewritten, so the
 prompt cache is kept.
@@ -122,8 +123,8 @@ align-agent examples                  # where they are, to open or copy
 Or, with nothing to install or build (image for amd64 and arm64, examples included):
 
 ```bash
-docker run --rm ghcr.io/va24d/align-agent:0.4.8 analyze /opt/align-agent/examples/teleport_control.json
-docker run --rm -v "$PWD:/work" ghcr.io/va24d/align-agent:0.4.8 analyze /work/my_trajectories/
+docker run --rm ghcr.io/va24d/align-agent:0.4.9 analyze /opt/align-agent/examples/teleport_control.json
+docker run --rm -v "$PWD:/work" ghcr.io/va24d/align-agent:0.4.9 analyze /work/my_trajectories/
 ```
 
 ## `align-agent analyze`

@@ -42,6 +42,7 @@ if os.path.join(HERE, "_lib") not in sys.path:
     sys.path.insert(0, os.path.join(HERE, "_lib"))
 
 from wt_src.harness.dependency_notice import dependency_notice  # noqa: E402
+from . import syntax  # noqa: E402
 from wt_src.harness.lean import redundant_writes  # noqa: E402
 from wt_src.metrics.replay import _live_events  # noqa: E402
 from wt_src.harness.tail_diff import format_line_numbered_diff, line_number_note  # noqa: E402
@@ -323,6 +324,14 @@ def blocks_for(state, root, changed, skip, command="", output="", budget=None):
                 text += "\n" + note
         clipped = clip_block(text, room)
         shown[p] = hunks if clipped == text else []  # a cut block shows only part of its hunks
+        broken = None
+        if new is not None:
+            try:
+                broken = syntax.broke(p, old, new)
+            except Exception:  # noqa: BLE001  a check must never fail the hook
+                broken = None
+        if broken:
+            clipped += f"\n[SYNTAX: '{p}' no longer parses ({broken}); it parsed before this call]"
         parts.append(clipped)
         used += len(clipped)
     if before:
