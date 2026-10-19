@@ -3,7 +3,7 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\"", "timeout": 30 }
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh\"", "timeout": 30 }
         ]
       }
     ],
@@ -11,7 +11,7 @@
       {
         "matcher": "Bash|PowerShell",
         "hooks": [
-          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\"", "timeout": 30 }
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh\"", "timeout": 30 }
         ]
       }
     ],
@@ -19,7 +19,15 @@
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\"", "timeout": 30 }
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh\"", "timeout": 30 }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh\"", "timeout": 30 }
         ]
       }
     ]

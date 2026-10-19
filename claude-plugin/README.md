@@ -30,7 +30,8 @@ remembered text can land in the wrong place. This plugin closes that gap.
 
 To try it from a checkout: `claude --plugin-dir claude-plugin` (from the repository root).
 
-Requires `python3` (3.10+) and, for the fast path, `git`. No packages to install.
+Requires Python 3.8 or later as `python3`, `python` or `py -3` (Windows, Git Bash) and, for the fast
+path, `git`. No packages to install. Without a usable Python the hooks do nothing, silently.
 
 ## Settings (environment variables)
 

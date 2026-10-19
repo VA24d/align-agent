@@ -1,9 +1,20 @@
 {
   "version": 1,
   "hooks": {
-    "sessionStart": [{ "type": "command", "bash": "align-agent-hook copilot sessionStart" }],
-    "preToolUse": [{ "type": "command", "bash": "align-agent-hook copilot preToolUse", "matcher": "bash", "timeoutSec": 30 }],
-    "postToolUse": [{ "type": "command", "bash": "align-agent-hook copilot postToolUse", "timeoutSec": 30 }],
-    "postToolUseFailure": [{ "type": "command", "bash": "align-agent-hook copilot postToolUseFailure", "timeoutSec": 30 }]
+    "sessionStart": [{ "type": "command",
+      "bash": "command -v align-agent-hook >/dev/null 2>&1 || exit 0; align-agent-hook copilot sessionStart",
+      "powershell": "if (Get-Command align-agent-hook -ErrorAction SilentlyContinue) { $input | align-agent-hook copilot sessionStart }" }],
+    "preCompact": [{ "type": "command",
+      "bash": "command -v align-agent-hook >/dev/null 2>&1 || exit 0; align-agent-hook copilot preCompact",
+      "powershell": "if (Get-Command align-agent-hook -ErrorAction SilentlyContinue) { $input | align-agent-hook copilot preCompact }" }],
+    "preToolUse": [{ "type": "command", "matcher": "bash|powershell", "timeoutSec": 30,
+      "bash": "command -v align-agent-hook >/dev/null 2>&1 || exit 0; align-agent-hook copilot preToolUse",
+      "powershell": "if (Get-Command align-agent-hook -ErrorAction SilentlyContinue) { $input | align-agent-hook copilot preToolUse }" }],
+    "postToolUse": [{ "type": "command", "timeoutSec": 30,
+      "bash": "command -v align-agent-hook >/dev/null 2>&1 || exit 0; align-agent-hook copilot postToolUse",
+      "powershell": "if (Get-Command align-agent-hook -ErrorAction SilentlyContinue) { $input | align-agent-hook copilot postToolUse }" }],
+    "postToolUseFailure": [{ "type": "command", "timeoutSec": 30,
+      "bash": "command -v align-agent-hook >/dev/null 2>&1 || exit 0; align-agent-hook copilot postToolUseFailure",
+      "powershell": "if (Get-Command align-agent-hook -ErrorAction SilentlyContinue) { $input | align-agent-hook copilot postToolUseFailure }" }]
   }
 }

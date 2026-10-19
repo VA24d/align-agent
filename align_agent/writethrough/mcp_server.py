@@ -14,13 +14,16 @@ process. MCP stdio transport: one JSON-RPC message per line on stdin and stdout.
 
 import json
 import os
+import signal
 import subprocess
 import sys
+import tempfile
 import uuid
 
 from .engine import Session, read_text, rel_path
 
 PROTOCOL = "2025-06-18"
+SUPPORTED = (PROTOCOL, "2025-03-26", "2024-11-05")  # versions whose tools/* messages this server speaks
 MAX_OUTPUT = 30000
 TOOLS = [
     {"name": "run_command",
@@ -37,6 +40,22 @@ TOOLS = [
 ]
 
 
+def kill_group(proc):
+    """Stop a timed-out command with everything it started."""
+    try:
+        if os.name != "nt":
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+    except OSError:
+        pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+    proc.wait()
+
+
 class Server:
     def __init__(self, root=None, session=None):
         self.root = os.path.realpath(root or os.environ.get("ALIGN_ROOT") or os.getcwd())
@@ -49,14 +68,24 @@ class Server:
             refusal = s.before(command)
         if refusal:
             return refusal, True
-        try:
-            r = subprocess.run(command, shell=True, cwd=self.root, capture_output=True, text=True, timeout=timeout,
-                               stdin=subprocess.DEVNULL)  # stdin carries the MCP protocol; never hand it to a command
-            out, err = r.stdout + r.stderr, r.returncode != 0
-            out = (out[:MAX_OUTPUT] + f"\n... output cut at {MAX_OUTPUT} characters") if len(out) > MAX_OUTPUT else out
-            out += f"\n[exit code {r.returncode}]"
-        except subprocess.TimeoutExpired:
-            out, err = f"[timed out after {timeout} s]", True
+        # output goes to a file, not a pipe: a command that leaves a process in the background
+        # (`npm run dev &`) returns when the shell exits instead of when the pipe closes
+        with tempfile.TemporaryFile() as f:
+            group = {"start_new_session": True} if os.name != "nt" else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+            proc = subprocess.Popen(command, shell=True, cwd=self.root, stdout=f, stderr=subprocess.STDOUT,
+                                    stdin=subprocess.DEVNULL, **group)  # stdin carries the MCP protocol; never hand it to a command
+            try:
+                code = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                kill_group(proc)
+                code = None
+            f.seek(0)
+            out = f.read().decode("utf-8", "replace")
+        out = (out[:MAX_OUTPUT] + f"\n... output cut at {MAX_OUTPUT} characters") if len(out) > MAX_OUTPUT else out
+        if code is None:
+            out, err = out + f"\n[timed out after {timeout} s; the command and its processes were stopped]", True
+        else:
+            out, err = out + f"\n[exit code {code}]", code != 0
         with Session(self.root, self.session) as s:
             extra = s.after(command, out)
         return out + ("\n\n" + extra if extra else ""), err
@@ -84,7 +113,8 @@ class Server:
     def handle(self, msg):
         method, mid = msg.get("method"), msg.get("id")
         if method == "initialize":
-            ver = (msg.get("params") or {}).get("protocolVersion") or PROTOCOL
+            asked = (msg.get("params") or {}).get("protocolVersion")
+            ver = asked if asked in SUPPORTED else PROTOCOL  # the spec: answer with a version the server supports
             result = {"protocolVersion": ver, "capabilities": {"tools": {}},
                       "serverInfo": {"name": "align-agent", "version": "0.4.9"}}
         elif method == "tools/list":
