@@ -62,6 +62,14 @@ limit for hook context.
 The diff and the dependency notice are the code from the study behind this tool (`src/harness`,
 copied into `scripts/_lib` by `tool/build.sh`).
 
+## Syntax note
+
+After a write that leaves a Python, Go, JSON or TOML file unparseable (and it parsed before), the diff ends
+with a `[SYNTAX: ...]` line. Python is parsed with the interpreter that runs the hook (`python3`, 3.10 or
+later), not the project's, so a write that adds newer syntax than that, such as nested f-strings or `type`
+aliases on 3.10 or 3.11, can be reported as broken; the note names the Python version it used. Set
+`ALIGN_SYNTAX=0` to turn it off.
+
 ## Audit your own sessions
 
 `/align-write-through:audit` counts stale edits in `~/.claude/projects` and `~/.codex/sessions` and lists

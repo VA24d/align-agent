@@ -2,7 +2,8 @@
 
 `broke(path, old, new)` returns "line N: message" when `new` no longer parses but `old` did, else None.
 Python is compiled (never executed), JSON and TOML are loaded, Go goes through `gofmt -e` when it is
-installed. Other languages are skipped. A file that did not parse before the write is not reported again.
+installed. Other languages are skipped. Python is parsed by the interpreter that runs the hook, so syntax newer
+than that interpreter can be reported as broken; the note names the version. A file that did not parse before the write is not reported again.
 Set ALIGN_SYNTAX=0 to turn the check off.
 """
 
@@ -11,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 
 GOFMT_TIMEOUT = 3  # seconds
 MAX_BYTES = 400_000
@@ -82,4 +84,7 @@ def broke(path, old, new):
     if old is not None and _check(path, old) is not None:
         return None
     bad = _check(path, new)
-    return f"line {bad[0]}: {bad[1]}" if bad[0] else bad[1]
+    msg = f"line {bad[0]}: {bad[1]}" if bad[0] else bad[1]
+    if path.lower().endswith(".py"):  # parsed by the interpreter that runs the hook, not the project's
+        msg += f"; checked with Python {sys.version_info.major}.{sys.version_info.minor}"
+    return msg

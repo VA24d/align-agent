@@ -18,7 +18,7 @@ pipx install align-agent                      # recommended: its own environment
 # or, in a virtual environment:
 python3 -m venv ~/.align && ~/.align/bin/pip install align-agent
 export PATH="$HOME/.align/bin:$PATH"                                 # add this line to ~/.zshrc or ~/.bashrc
-align-agent --version                                                # prints: align-agent 0.4.9
+align-agent --version                                                # prints: align-agent 0.4.10
 ```
 
 If the shell says `command not found: align-agent`, the install folder is not on `PATH`: run
@@ -123,8 +123,8 @@ align-agent examples                  # where they are, to open or copy
 Or, with nothing to install or build (image for amd64 and arm64, examples included):
 
 ```bash
-docker run --rm ghcr.io/va24d/align-agent:0.4.9 analyze /opt/align-agent/examples/teleport_control.json
-docker run --rm -v "$PWD:/work" ghcr.io/va24d/align-agent:0.4.9 analyze /work/my_trajectories/
+docker run --rm ghcr.io/va24d/align-agent:0.4.10 analyze /opt/align-agent/examples/teleport_control.json
+docker run --rm -v "$PWD:/work" ghcr.io/va24d/align-agent:0.4.10 analyze /work/my_trajectories/
 ```
 
 ## `align-agent analyze`

@@ -86,7 +86,7 @@ class Server:
         if method == "initialize":
             ver = (msg.get("params") or {}).get("protocolVersion") or PROTOCOL
             result = {"protocolVersion": ver, "capabilities": {"tools": {}},
-                      "serverInfo": {"name": "align-agent", "version": "0.4.9"}}
+                      "serverInfo": {"name": "align-agent", "version": "0.4.10"}}
         elif method == "tools/list":
             result = {"tools": TOOLS}
         elif method == "tools/call":

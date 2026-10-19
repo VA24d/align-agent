@@ -1,5 +1,5 @@
 # ALIGN: analyze agent trajectories for stale edits; run mini-swe-agent with the write-through hook.
-# Pre-built: docker run --rm ghcr.io/va24d/align-agent:0.4.9 --help
+# Pre-built: docker run --rm ghcr.io/va24d/align-agent:0.4.10 --help
 # Build from the repository root:  docker build -t align-agent .
 FROM python:3.12-slim
 LABEL org.opencontainers.image.source=https://github.com/VA24d/align-agent
