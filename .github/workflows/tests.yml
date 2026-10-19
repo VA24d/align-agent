@@ -23,8 +23,7 @@ jobs:
       - name: Install
         run: python -m pip install --disable-pip-version-check pytest -e .
       - name: Tests
-        # TODO: add -W error::ResourceWarning once the engine closes its .lock handle
-        run: python -m pytest -q tests/
+        run: python -m pytest -q -W error::ResourceWarning tests/
       - name: Shell scripts parse
         if: runner.os != 'Windows'
         run: |
