@@ -44,7 +44,7 @@ def handle(payload):
             reason = s.before(inp.get("command", "")) if tool in SHELL_TOOLS else None
             return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                            "permissionDecisionReason": reason}} if reason else None
-        if event != "PostToolUse":
+        if event not in ("PostToolUse", "PostToolUseFailure"):  # a failed tool can still have changed files
             return None
         path = inp.get("file_path") or inp.get("notebook_path") or inp.get("path")
         read = path if tool in READ_TOOLS else None
@@ -53,11 +53,11 @@ def handle(payload):
             lo = int(inp.get("offset") or 1)
             rng = (lo, lo + int(inp.get("limit") or 2000) - 1)
         command = inp.get("command", "") if tool in SHELL_TOOLS else ""
-        resp = payload.get("tool_response")
+        resp = payload.get("tool_response", payload.get("error"))
         output = "\n".join(str(resp.get(k) or "") for k in ("stdout", "stderr", "output")) if isinstance(resp, dict) else str(resp or "")
         text = s.after(command, output if command else "", read=read, read_range=rng,
                        authored=path if tool in EDIT_TOOLS else None)
-        return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}} if text else None
+        return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}} if text else None
 
 
 def main():
