@@ -57,6 +57,37 @@ def _analyzed(args):
         yield from pool.imap(_one, jobs, chunksize=8)
 
 
+def _where(results, roots, top):
+    """Lines saying which folders and files hold the stale edits (shown on this machine only: they name folders)."""
+    rows = [r for r in results if r["opportunities"]]
+    if not rows or not top:
+        return []
+
+    def rel(f):
+        for root in roots:
+            if os.path.isdir(root) and os.path.abspath(f).startswith(os.path.abspath(root) + os.sep):
+                return os.path.relpath(f, root)
+        return os.path.join(os.path.basename(os.path.dirname(f)), os.path.basename(f))
+
+    def line(name, stale, opps):
+        return f"  {stale:5d} of {opps:5d} edits ({100 * stale / opps:3.0f}%)  {name[-70:]}"
+    folders = {}
+    for r in rows:
+        key = rel(r["file"]).split(os.sep)[0]
+        s, o = folders.get(key, (0, 0))
+        folders[key] = (s + r["stale_edits"], o + r["opportunities"])
+    per_file = sorted(rows, key=lambda r: -r["stale_edits"])
+    total = sum(r["stale_edits"] for r in rows)
+    held = sum(r["stale_edits"] for r in per_file[:10])
+    out = [f"\nWhere they are: {sum(1 for r in rows if not r['stale_edits'])} of {len(rows)} files with anchored edits have no stale edit"
+           + (f"; the 10 files with most hold {100 * held / total:.0f}% of the stale edits." if total else "."),
+           f"Folders with most stale edits (folder names are printed here only, not in the summary line above):"]
+    out += [line(k, s, o) for k, (s, o) in sorted(folders.items(), key=lambda kv: -kv[1][0])[:top] if s]
+    out += ["Files (sessions) with most stale edits:"]
+    out += [line(rel(r["file"]), r["stale_edits"], r["opportunities"]) for r in per_file[:top] if r["stale_edits"]]
+    return out
+
+
 def cmd_examples(args):
     for f in example_files():
         print(f)
@@ -88,6 +119,8 @@ def cmd_analyze(args):
           f"{summary['stale_edits']} stale ({_pct(summary['stale_rate'])}, 95% CI {_pct(summary['ci95'][0])}-{_pct(summary['ci95'][1])}), "
           f"{summary['went_wrong']} went wrong because of it. Views behind stale edits: {summary['view_channels']}. "
           f"{summary['seconds']}s.")
+    for ln in _where(results, args.paths, args.top):
+        print(ln)
     if skipped:
         print(f"skipped {len(skipped)} files that are not trajectories in a known format", file=sys.stderr)
     for f, e in skipped[:5]:
@@ -109,6 +142,7 @@ def main(argv=None):
     a.add_argument("--cwd", help="the agent's working directory, for resolving relative paths")
     a.add_argument("--json", help="write per-edit results here")
     a.add_argument("--quiet", action="store_true", help="print the summary only")
+    a.add_argument("--top", type=int, default=0, metavar="N", help="after the summary, list the N folders and N files with most stale edits")
     a.add_argument("-j", "--jobs", type=int, default=1, help="analyze this many files in parallel (default 1)")
     a.set_defaults(fn=cmd_analyze)
     e = sub.add_parser("examples", help="print the paths of the bundled example trajectories")
