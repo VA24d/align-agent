@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 
 GOFMT_TIMEOUT = 3  # seconds
 MAX_BYTES = 400_000
@@ -20,7 +21,10 @@ def _python(path, text):
     try:
         compile(text, path, "exec", dont_inherit=True)
     except SyntaxError as e:
-        return e.lineno or 0, (e.msg or "invalid syntax")
+        msg = e.msg or "invalid syntax"
+        if sys.version_info < (3, 12):  # newer syntax (match, type aliases, PEP 695) fails on an old interpreter
+            msg += f" (checked with Python {sys.version_info[0]}.{sys.version_info[1]}; newer syntax may be valid)"
+        return e.lineno or 0, msg
     except (ValueError, RecursionError, MemoryError) as e:  # null bytes, absurd nesting
         return 0, str(e)[:80]
     return None

@@ -40,6 +40,8 @@ import os
 import subprocess
 from typing import Dict, List, Optional, Protocol, Tuple
 
+from .tail_diff import split_lines
+
 VIEWPORT_HALF = 25  # lines above and below the edit centre
 # Bounds (harness v11). The viewport is appended after the observation template
 # has folded the command's output, so nothing else limits it. Without them,
@@ -154,8 +156,8 @@ def viewport_blocks(
             left_out.append(rel_path)
             continue
         try:
-            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
+            with open(abs_path, "r", encoding="utf-8", errors="replace", newline="") as f:
+                lines = split_lines(f.read(), keepends=True)
         except OSError:
             continue
 
@@ -168,12 +170,12 @@ def viewport_blocks(
             old_content = before_contents[rel_path]
         else:
             for b in reversed(bindings):
-                if getattr(b, "file_path", None) == rel_path and getattr(b, "file_content", None):
+                if getattr(b, "file_path", None) == rel_path and getattr(b, "file_content", None) is not None:
                     old_content = b.file_content
                     break
 
         if old_content is not None:
-            old_lines = old_content.splitlines(keepends=True)
+            old_lines = split_lines(old_content, keepends=True)
             first_diff = None
             for i, (a, b) in enumerate(zip(old_lines, lines)):
                 if a != b:
