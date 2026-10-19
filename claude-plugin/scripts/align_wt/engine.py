@@ -234,7 +234,7 @@ def rel_path(root, path):
         return None
     full = os.path.realpath(path if os.path.isabs(path) else os.path.join(root, path))
     r = os.path.relpath(full, os.path.realpath(root))
-    return None if r.startswith("..") else r
+    return None if r == os.pardir or r.startswith(os.pardir + os.sep) else r  # not `..notes.txt`
 
 
 # ---------------------------------------------------------------- line numbers

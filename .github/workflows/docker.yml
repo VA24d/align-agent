@@ -34,4 +34,4 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/VA24d/align-agent
             org.opencontainers.image.description=ALIGN: keep coding agents' views of their files current, and find stale edits in agent trajectories
-            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.licenses=Apache-2.0
