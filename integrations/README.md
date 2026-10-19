@@ -18,9 +18,9 @@ Each integration does three things where the agent allows it:
 | Codex CLI | yes | shell | yes | `codex/hooks.json` → `~/.codex/hooks.json` or `.codex/hooks.json`; trust it with `/hooks` |
 | Gemini CLI | yes | yes | yes | merge `gemini/settings.json` into `.gemini/settings.json` |
 | Cursor (IDE, CLI) | yes | yes | yes | `cursor/hooks.json` → `.cursor/hooks.json` |
-| GitHub Copilot CLI | yes | yes | yes | `copilot/align_agent.json` → `.github/hooks/` |
-| OpenCode 1.x | yes | yes | yes | `opencode/align_agent.js` → `.opencode/plugins/` |
-| Cline | yes | yes | no | `cline/PostToolUse` → `.clinerules/hooks/` (its hooks can only cancel a whole task) |
+| GitHub Copilot CLI | yes | yes | yes | `copilot/align-agent.json` → `.github/hooks/` |
+| OpenCode 1.x | yes | yes | yes | `opencode/align-agent.js` → `.opencode/plugins/` |
+| Cline | yes | yes | no | `cline/PostToolUse` → `.clinerules/hooks/`, then turn on **Enable Hooks** in Cline's settings (its hooks can only cancel a whole task) |
 | Goose, Antigravity CLI, others | yes | yes | yes | MCP: `mcp/README.md` (their hooks cannot add text after a tool) |
 | Aider | n/a | | | re-reads the files in the chat on every request |
 
@@ -44,12 +44,17 @@ returns `{"context": ...}` or `{"deny": ...}` (`align-agent-wt --help`).
   the adapter always prints valid JSON.
 - **GitHub Copilot CLI** ([hooks reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-hooks-reference)):
   `postToolUse` fires only on success, so `postToolUseFailure` is registered too; added context is
-  capped at 10 KB. The cloud agent reads only `.github/hooks/*.json`.
+  capped at 10 KB. The cloud agent reads only `.github/hooks/*.json` and honours only the `bash`
+  command. A `preToolUse` hook that exits non-zero denies the tool, so every command first checks that
+  `align-agent-hook` is installed and otherwise exits 0: a committed config never blocks a machine
+  (or the cloud agent) without it. `powershell` commands are given for Windows.
 - **OpenCode** ([plugins](https://opencode.ai/docs/plugins)): the V1 plugin appends to the tool output
-  and throws to refuse. OpenCode 2 uses a different plugin API (`ctx.tool.hook`); V1 plugins do not run there.
+  and throws to refuse. `ALIGN_WT` may name a command with arguments (`uvx --from align-agent align-agent-wt`);
+  a missing command, an error or a call over 30 s leaves the tool result as it is. OpenCode 2 uses a different plugin API (`ctx.tool.hook`); V1 plugins do not run there.
 - **Cline** (`.clinerules/hooks/README.md` in cline/cline): file hooks; `contextModification` reaches the
-  model after the tool results. Refusing a single command needs a TypeScript plugin, available in the
-  SDK and CLI but not yet in VS Code.
+  model after the tool results. Hooks run only with **Enable Hooks** turned on in Cline's settings, and
+  file hooks do not run on native Windows. Refusing a single command needs a TypeScript plugin, available
+  in the SDK and CLI but not yet in VS Code.
 
 The adapters are `align_agent/writethrough/hooks.py`; each is tested with the agent's documented event
-payloads (`tests/test_claude_hook.py` in the research repository).
+payloads in `tests/test_adapters.py` (`python3 -m unittest discover tests`).

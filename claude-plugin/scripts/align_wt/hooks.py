@@ -1,14 +1,16 @@
 """Native hook adapters: `align-agent-hook <agent> [event]` reads one hook event as JSON on stdin and
 writes the agent's own reply format on stdout. Field names and reply formats follow each agent's
-documentation as of October 2026 (see tool/integrations/README.md for the sources and configs).
+documentation as of October 2026 (see integrations/README.md for the sources and configs).
 
     agent      events handled                                    after a tool            before a shell command
-    claude     SessionStart, PreToolUse, PostToolUse              additionalContext       permissionDecision deny
+    claude     SessionStart, PreToolUse, PostToolUse,             additionalContext       permissionDecision deny
+               PostToolUseFailure
     codex      SessionStart, PostCompact, PreToolUse, PostToolUse additionalContext       permissionDecision deny
     gemini     SessionStart, PreCompress, BeforeTool, AfterTool   additionalContext       decision deny
-    cursor     beforeShellExecution, beforeReadFile, postToolUse, additional_context      permission deny + agent_message
-               afterFileEdit
-    copilot    sessionStart, preToolUse, postToolUse,             additionalContext       permissionDecision deny
+    cursor     sessionStart, preCompact, beforeShellExecution,    additional_context      permission deny + agent_message
+               beforeReadFile, afterFileEdit, postToolUse,
+               postToolUseFailure
+    copilot    sessionStart, preCompact, preToolUse, postToolUse, additionalContext       permissionDecision deny
                postToolUseFailure (event given as an argument)
     cline      PreToolUse, PostToolUse (file hooks; event given   contextModification     (none: cancelling ends the task)
                as an argument)
@@ -23,10 +25,16 @@ import re
 import sys
 import time
 
-from .claude_code import handle as claude_handle
-from .engine import Session, default_state_dir
+try:
+    from .claude_code import handle as claude_handle
+    from .engine import Session, default_state_dir
+except Exception as e:  # noqa: BLE001  a broken install must not block the agent: main logs it and fails open
+    IMPORT_ERROR = e
+else:
+    IMPORT_ERROR = None
 
-PATCH_FILE = re.compile(r"(?m)^\*\*\* (?:Update|Add|Delete) File: (.+)$")
+# apply_patch headers; `*** Move to:` names a rename's new path
+PATCH_FILE = re.compile(r"(?m)^\*\*\* (?:(?:Update|Add|Delete) File|Move to): (.+?)\r?$")
 
 
 def _out_text(resp):
@@ -42,6 +50,19 @@ def _out_text(resp):
         except ValueError:
             return resp
     return str(resp or "")
+
+
+def patched_files(text):
+    """The files an apply_patch text adds, updates, deletes or moves to."""
+    return [f.strip() for f in PATCH_FILE.findall(text or "") if f.strip()]
+
+
+def read_lines(lo, hi):
+    """A read range from a first line and a last line, either of which may be missing (None: whole file)."""
+    if lo is None and hi is None:
+        return None
+    lo = int(lo or 1)
+    return (lo, int(hi) if hi is not None else lo + 1999)
 
 
 def _args(a):
@@ -76,20 +97,22 @@ def codex(p, event=None):
         authored = []
         if tool in ("apply_patch", "Edit", "Write"):
             text = inp.get("command") or inp.get("patch") or ""
-            authored = PATCH_FILE.findall(text) or [inp.get("file_path") or inp.get("path")]
+            authored = patched_files(text) or [inp.get("file_path") or inp.get("path")]
         ctx = s.after(command, _out_text(p.get("tool_response")) if command else "", authored=[a for a in authored if a])
         return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": ctx}} if ctx else None
 
 
 # ---------------------------------------------------------------- Gemini CLI
 
-GEMINI_READ = {"read_file": ("file_path", "offset", "limit"), "read_many_files": None}
 GEMINI_EDIT = {"write_file", "replace", "edit"}
+# read_many_files prints each file under a `--- <path> ---` header
+GEMINI_MANY = re.compile(r"(?m)^--- (.+?) ---\r?$")
 
 
 def gemini(p, event=None):
-    """BeforeTool/AfterTool. read_file's offset is 0-based. Added context is appended to the tool's
-    result inside <hook_context>; a deny reaches the model as 'Tool execution blocked: <reason>'."""
+    """BeforeTool/AfterTool. read_file takes start_line/end_line (1-based, inclusive); older versions
+    took a 0-based offset and a limit. Added context is appended to the tool's result inside
+    <hook_context>; a deny reaches the model as 'Tool execution blocked: <reason>'."""
     event = event or p.get("hook_event_name")
     root = os.environ.get("GEMINI_PROJECT_DIR") or p.get("cwd") or os.getcwd()
     with Session(root, p.get("session_id") or "gemini") as s:
@@ -106,9 +129,15 @@ def gemini(p, event=None):
         read = rng = None
         if tool == "read_file":
             read = inp.get("file_path") or inp.get("absolute_path")
-            if inp.get("offset") is not None or inp.get("limit") is not None:
+            if inp.get("start_line") is not None or inp.get("end_line") is not None:
+                rng = read_lines(inp.get("start_line"), inp.get("end_line"))
+            elif inp.get("offset") is not None or inp.get("limit") is not None:
                 lo = int(inp.get("offset") or 0) + 1
                 rng = (lo, lo + int(inp.get("limit") or 2000) - 1)
+        elif tool == "read_many_files":
+            for f in GEMINI_MANY.findall(_out_text(p.get("tool_response"))):
+                if f.strip() != "End of content":
+                    s.read(f.strip())
         authored = inp.get("file_path") if tool in GEMINI_EDIT else None
         ctx = s.after(command, _out_text(p.get("tool_response")) if command else "", read=read, read_range=rng,
                       authored=authored)
@@ -124,7 +153,14 @@ def cursor(p, event=None):
     event = event or p.get("hook_event_name")
     roots = p.get("workspace_roots") or []
     root = (roots[0] if roots else None) or p.get("cwd") or os.getcwd()
-    with Session(root, p.get("conversation_id") or "cursor") as s:
+    key = p.get("conversation_id") or p.get("session_id") or "cursor"
+    # a subagent has its own context, so its own views: key by its id when the event carries one
+    agent = p.get("subagent_id")
+    with Session(root, re.sub(r"[^A-Za-z0-9_.-]", "_", f"{key}-{agent}" if agent else key)) as s:
+        if event in ("sessionStart", "preCompact", "subagentStart"):
+            s.start(fresh=event != "sessionStart" or p.get("source") != "resume")
+            # subagentStart is a permission hook: it must answer, or Cursor may block the subagent
+            return {"permission": "allow"} if event == "subagentStart" else {}
         if event == "beforeShellExecution":
             reason = s.before(p.get("command", ""))
             if reason:
@@ -132,41 +168,57 @@ def cursor(p, event=None):
                         "user_message": "ALIGN: line numbers in this command are out of date; the agent was shown the current lines."}
             return {"permission": "allow"}
         if event == "beforeReadFile":
-            s.read(p.get("file_path"))
+            # the view is recorded from postToolUse, which knows the lines a Read asked for
             return {"permission": "allow"}
         if event == "afterFileEdit":
             s.authored(p.get("file_path"))
             return {}
-        if event != "postToolUse":
+        if event not in ("postToolUse", "postToolUseFailure"):
             return {}
         tool, inp = p.get("tool_name") or "", _args(p.get("tool_input"))
         command = inp.get("command", "") if tool == "Shell" else ""
         path = inp.get("file_path") or inp.get("path") or inp.get("target_file")
-        ctx = s.after(command, _out_text(p.get("tool_output")) if command else "",
-                      read=path if tool == "Read" else None, authored=path if tool in ("Write", "Edit") else None)
+        out = p.get("tool_output") if p.get("tool_output") is not None else p.get("error_message")
+        rng = None
+        if tool == "Read" and (inp.get("offset") or inp.get("limit")):
+            lo = int(inp.get("offset") or 1)
+            rng = (lo, lo + int(inp.get("limit") or 2000) - 1)
+        ctx = s.after(command, _out_text(out) if command else "", read=path if tool == "Read" else None, read_range=rng,
+                      authored=path if tool in ("Write", "Edit", "Delete") else None)
         return {"additional_context": ctx} if ctx else {}
 
 
 # ---------------------------------------------------------------- GitHub Copilot CLI
 
+COPILOT_SHELL = {"bash", "Bash", "powershell", "PowerShell"}
+
+
 def copilot(p, event=None):
     """camelCase events: {sessionId, cwd, toolName, toolArgs, toolResult}. postToolUse fires only on
-    success, so register postToolUseFailure too. Added context is capped at 10 KB."""
+    success, so register postToolUseFailure too. Added context is capped at 10 KB. A subagent's
+    events carry its agentId; it has its own context, so its own views."""
     root = p.get("cwd") or os.getcwd()
-    with Session(root, p.get("sessionId") or p.get("session_id") or "copilot") as s:
-        if event == "sessionStart":
-            s.start(fresh=True)
+    key = p.get("sessionId") or p.get("session_id") or "copilot"
+    agent = p.get("agentId") or p.get("agent_id")
+    with Session(root, re.sub(r"[^A-Za-z0-9_.-]", "_", f"{key}-{agent}" if agent else key)) as s:
+        if event in ("sessionStart", "preCompact"):
+            s.start(fresh=event == "preCompact" or p.get("source") != "resume")
             return None
         tool, inp = p.get("toolName") or p.get("tool_name") or "", _args(p.get("toolArgs") or p.get("tool_input"))
         if event == "preToolUse":
-            reason = s.before(inp.get("command", "")) if tool in ("bash", "Bash") else None
+            reason = s.before(inp.get("command", "")) if tool in COPILOT_SHELL else None
             return {"permissionDecision": "deny", "permissionDecisionReason": reason} if reason else None
         if event not in ("postToolUse", "postToolUseFailure"):
             return None
-        command = inp.get("command", "") if tool in ("bash", "Bash") else ""
+        command = inp.get("command", "") if tool in COPILOT_SHELL else ""
         path = inp.get("path") or inp.get("file_path")
+        rng = None
+        vr = inp.get("view_range")
+        if tool in ("view", "Read") and isinstance(vr, list) and vr:
+            hi = vr[1] if len(vr) > 1 and int(vr[1]) != -1 else 10 ** 9  # -1: to the end of the file
+            rng = (int(vr[0]), int(hi))
         ctx = s.after(command, _out_text(p.get("toolResult") or p.get("tool_response")) if command else "",
-                      read=path if tool in ("view", "Read") else None,
+                      read=path if tool in ("view", "Read") else None, read_range=rng,
                       authored=path if tool in ("edit", "create", "Edit", "Write") else None)
         return {"additionalContext": ctx} if ctx else None
 
@@ -187,12 +239,18 @@ def cline(p, event=None):
         commands = prm.get("commands") or ([prm["command"]] if prm.get("command") else [])
         if isinstance(commands, str):
             commands = [commands]
-        read = None
         if tool in ("read_file", "read_files"):
-            files = prm.get("files")
-            read = prm.get("path") or (files[0].get("path") if isinstance(files, list) and files else None)
-        authored = prm.get("path") if tool in ("editor", "write_to_file", "replace_in_file", "apply_patch") else None
-        ctx = s.after(" && ".join(commands), _out_text(post.get("result")) if commands else "", read=read, authored=authored)
+            files = prm.get("files") if isinstance(prm.get("files"), list) else [prm]
+            for f in files:
+                if isinstance(f, dict) and f.get("path"):
+                    rng = read_lines(f.get("start_line"), f.get("end_line"))
+                    s.read(f["path"], *(rng or (None, None)))
+        authored = None
+        if tool == "apply_patch":
+            authored = patched_files(prm.get("input")) or ([prm["path"]] if prm.get("path") else None)
+        elif tool in ("editor", "write_to_file", "replace_in_file"):
+            authored = prm.get("path")
+        ctx = s.after(" && ".join(commands), _out_text(post.get("result")) if commands else "", authored=authored)
         return {"cancel": False, "contextModification": ctx} if ctx else {"cancel": False}
 
 
@@ -208,11 +266,14 @@ def main(argv=None):
     agent = argv[0]
     event = argv[1] if len(argv) > 1 else None
     try:
-        payload = json.load(sys.stdin)
+        if IMPORT_ERROR is not None:
+            raise IMPORT_ERROR
+        payload = json.loads(sys.stdin.buffer.read())  # UTF-8 whatever the locale (Windows)
         event = event or payload.get("hook_event_name") or payload.get("hookName")
         reply = AGENTS[agent](payload, event)
     except Exception as e:  # noqa: BLE001  fail open
-        log = os.path.join(default_state_dir(), "errors.log")
+        state = default_state_dir() if IMPORT_ERROR is None else (os.environ.get("ALIGN_STATE") or os.path.expanduser("~/.cache/align-agent"))
+        log = os.path.join(state, "errors.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)
         with open(log, "a") as f:
             f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {agent} {type(e).__name__}: {e}\n")

@@ -23,6 +23,8 @@ TAIL_DIFF_CONTEXT = 3
 TAIL_DIFF_MAX_FILES = 3
 TAIL_DIFF_MAX_LINE = 200
 TAIL_DIFF_MAX_CHARS = 10_000
+EXACT_LINES = 2000    # a changed stretch up to this many lines is diffed exactly (autojunk off)
+MATCH_LINES = 60_000  # a longer one is shown as one replaced stretch: SequenceMatcher is near-quadratic
 
 
 class _BindingsSource(Protocol):
@@ -38,11 +40,57 @@ def _is_binary(path: str) -> bool:
 
 
 def _clip(line: str) -> str:
-    body = line.rstrip("\n")
-    if len(body) <= TAIL_DIFF_MAX_LINE:
-        return line
     tail = "\n" if line.endswith("\n") else ""
+    body = line.rstrip("\n").rstrip("\r")  # a CRLF file's \r is not text the model can use
+    if len(body) <= TAIL_DIFF_MAX_LINE:
+        return body + tail
     return f"{body[:TAIL_DIFF_MAX_LINE]} ...[{len(body) - TAIL_DIFF_MAX_LINE} more characters]{tail}"
+
+
+def split_lines(text: str, keepends: bool = False) -> List[str]:
+    """Lines as sed, grep -n and editors number them: split at "\\n" only. str.splitlines also
+    splits at \\r, \\f, \\v, \\x1c-\\x1e, \\x85, U+2028 and U+2029, which shifts every later number."""
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    if keepends:
+        lines = [l + "\n" for l in lines]
+        if lines and not text.endswith("\n"):
+            lines[-1] = lines[-1][:-1]
+    return lines
+
+
+def opcodes(a: List[str], b: List[str]) -> List[Tuple[str, int, int, int, int]]:
+    """difflib opcodes for a -> b in bounded time: the common head and tail are matched directly,
+    and only the changed middle goes through SequenceMatcher (one replaced stretch if it is huge)."""
+    n = min(len(a), len(b))
+    i = 0
+    while i < n and a[i] == b[i]:
+        i += 1
+    j = 0
+    while j < n - i and a[len(a) - 1 - j] == b[len(b) - 1 - j]:
+        j += 1
+    ma, mb = a[i:len(a) - j], b[i:len(b) - j]
+    ops = [("equal", 0, i, 0, i)] if i else []
+    if not ma and mb:
+        ops.append(("insert", i, i, i, i + len(mb)))
+    elif ma and not mb:
+        ops.append(("delete", i, i + len(ma), i, i))
+    elif ma and mb:
+        if max(len(ma), len(mb)) > MATCH_LINES:
+            mid = [("replace", 0, len(ma), 0, len(mb))]
+        else:
+            mid = difflib.SequenceMatcher(None, ma, mb, autojunk=max(len(ma), len(mb)) > EXACT_LINES).get_opcodes()
+        ops += [(t, i1 + i, i2 + i, j1 + i, j2 + i) for t, i1, i2, j1, j2 in mid]
+    if j:
+        ops.append(("equal", len(a) - j, len(a), len(b) - j, len(b)))
+    return ops
+
+
+def _held(binding) -> Optional[str]:
+    """The content a binding holds; an empty file is content too, not a reason to use raw_content."""
+    content = getattr(binding, "file_content", None)
+    return content if content is not None else getattr(binding, "raw_content", None)
 
 
 def format_line_numbered_diff(
@@ -54,15 +102,14 @@ def format_line_numbered_diff(
     current_step: Optional[int] = None,
 ) -> str:
     """Format a diff between held content and live disk with explicit live line numbers."""
-    held_lines = held_content.splitlines()
-    disk_lines = disk_content.splitlines()
-    matcher = difflib.SequenceMatcher(None, held_lines, disk_lines)
+    held_lines = split_lines(held_content)
+    disk_lines = split_lines(disk_content)
 
     step_info = f" (held at Step {step_seen})" if step_seen is not None else ""
     curr_info = f" (Step {current_step})" if current_step is not None else ""
     
     blocks: List[str] = []
-    for tag, alo, ahi, blo, bhi in matcher.get_opcodes():
+    for tag, alo, ahi, blo, bhi in opcodes(held_lines, disk_lines):
         if tag == "equal":
             continue
 
@@ -142,7 +189,7 @@ def tail_diff_blocks(
             break
 
         try:
-            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(abs_path, "r", encoding="utf-8", errors="replace", newline="") as f:
                 disk_content = f.read()
         except OSError:
             continue
@@ -155,7 +202,7 @@ def tail_diff_blocks(
                 continue
             if current_step is not None and getattr(b, "step_id", None) is not None and b.step_id >= current_step:
                 continue  # this step's own read: the file after the write
-            held_content = getattr(b, "file_content", None) or getattr(b, "raw_content", None)
+            held_content = _held(b)
             step_seen = getattr(b, "step_id", None)
             break
 
@@ -176,8 +223,8 @@ def tail_diff_blocks(
             )
         else:
             diff_lines = list(difflib.unified_diff(
-                held_content.splitlines(keepends=True),
-                disk_content.splitlines(keepends=True),
+                split_lines(held_content, keepends=True),
+                split_lines(disk_content, keepends=True),
                 fromfile=f"{rel_path} (held at Step {step_seen})",
                 tofile=f"{rel_path} (current on disk)",
                 n=context_lines,
@@ -188,7 +235,8 @@ def tail_diff_blocks(
             continue
 
         if used_chars + len(diff_text) > TAIL_DIFF_MAX_CHARS:
-            diff_text = diff_text[: TAIL_DIFF_MAX_CHARS - used_chars] + "\n...[truncated]"
+            # cut at a line end, so the last line shown keeps its whole line number
+            diff_text = diff_text[: TAIL_DIFF_MAX_CHARS - used_chars].rsplit("\n", 1)[0] + "\n...[truncated]"
 
         blocks.append(diff_text)
         shown.append(rel_path)
@@ -233,9 +281,9 @@ def apply_tail_diff(
         abs_p = os.path.join(workspace_root, f_path) if not os.path.isabs(f_path) else f_path
         if os.path.exists(abs_p) and os.path.isfile(abs_p):
             try:
-                with open(abs_p, "r", encoding="utf-8", errors="replace") as f:
+                with open(abs_p, "r", encoding="utf-8", errors="replace", newline="") as f:
                     disk_content = f.read()
-                held_content = getattr(binding, "file_content", None) or getattr(binding, "raw_content", None)
+                held_content = _held(binding)
                 if held_content is None or held_content == disk_content:
                     continue
 
@@ -253,8 +301,8 @@ def apply_tail_diff(
                     )
                 else:
                     diff_lines = list(difflib.unified_diff(
-                        held_content.splitlines(keepends=True),
-                        disk_content.splitlines(keepends=True),
+                        split_lines(held_content, keepends=True),
+                        split_lines(disk_content, keepends=True),
                         fromfile=f"{f_path} (held at Step {step_seen})",
                         tofile=f"{f_path} (current on disk at Step {inval_step})",
                         n=TAIL_DIFF_CONTEXT,
@@ -282,7 +330,7 @@ def line_number_note(path, base, new, limit=4):
     stated against the previous block (which, in a 60-run test, led agents to apply a shift twice or
     miss one; see docs/results/shift_test_anthropic_claude-sonnet-5.md)."""
     moved = [(i1 + 1, i2, j1 + 1, j2, j1 - i1) for tag, i1, i2, j1, j2 in
-             difflib.SequenceMatcher(None, base.splitlines(), new.splitlines(), autojunk=False).get_opcodes()
+             opcodes(split_lines(base), split_lines(new))
              if tag == "equal" and j1 != i1]
     if not moved:
         return ""

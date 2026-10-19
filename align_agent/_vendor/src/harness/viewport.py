@@ -40,6 +40,8 @@ import os
 import subprocess
 from typing import Dict, List, Optional, Protocol, Tuple
 
+from .tail_diff import split_lines
+
 VIEWPORT_HALF = 25  # lines above and below the edit centre
 # Bounds (harness v11). The viewport is appended after the observation template
 # has folded the command's output, so nothing else limits it. Without them,
@@ -49,6 +51,10 @@ VIEWPORT_HALF = 25  # lines above and below the edit centre
 VIEWPORT_MAX_FILES = 3
 VIEWPORT_MAX_LINE = 200
 VIEWPORT_MAX_CHARS = 10_000
+
+
+# never source at any depth; every other skip_dirs entry is skipped at the workspace root only
+SKIP_ANYWHERE = {".git", "__pycache__", "node_modules", ".pytest_cache", ".mypy_cache", ".tox"}
 
 
 def snapshot_workspace(workspace_dir: str, skip_dirs: Optional[set] = None) -> Dict[str, Tuple[int, int]]:
@@ -63,7 +69,10 @@ def snapshot_workspace(workspace_dir: str, skip_dirs: Optional[set] = None) -> D
     skip = skip_dirs or {".git", "__pycache__", "node_modules", ".egg-info"}
     snap: Dict[str, Tuple[int, int]] = {}
     for root, dirs, files in os.walk(workspace_dir):
-        dirs[:] = [d for d in dirs if d not in skip]
+        # build/, dist/, venv/ ... are build trees at the top only: deeper, a directory
+        # with that name is source (pip's src/pip/_internal/operations/build/)
+        top = os.path.samefile(root, workspace_dir)
+        dirs[:] = [d for d in dirs if not (d in SKIP_ANYWHERE or (top and d in skip))]
         for name in files:
             full = os.path.join(root, name)
             try:
@@ -154,8 +163,8 @@ def viewport_blocks(
             left_out.append(rel_path)
             continue
         try:
-            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
+            with open(abs_path, "r", encoding="utf-8", errors="replace", newline="") as f:
+                lines = split_lines(f.read(), keepends=True)
         except OSError:
             continue
 
@@ -168,12 +177,12 @@ def viewport_blocks(
             old_content = before_contents[rel_path]
         else:
             for b in reversed(bindings):
-                if getattr(b, "file_path", None) == rel_path and getattr(b, "file_content", None):
+                if getattr(b, "file_path", None) == rel_path and getattr(b, "file_content", None) is not None:
                     old_content = b.file_content
                     break
 
         if old_content is not None:
-            old_lines = old_content.splitlines(keepends=True)
+            old_lines = split_lines(old_content, keepends=True)
             first_diff = None
             for i, (a, b) in enumerate(zip(old_lines, lines)):
                 if a != b:
