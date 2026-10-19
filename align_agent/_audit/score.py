@@ -227,13 +227,37 @@ class Replay:
         return self
 
 
+def _binom_tail(k, n, p, upper):
+    """P(X >= k) if upper else P(X <= k), X ~ Binomial(n, p), summed in log space (standard library only)."""
+    import math
+    if p <= 0.0:
+        return 1.0 if (upper and k <= 0) or (not upper) else 0.0
+    if p >= 1.0:
+        return 1.0 if (upper) or k >= n else 0.0
+    lp, lq, lg = math.log(p), math.log1p(-p), math.lgamma(n + 1)
+    rng = range(k, n + 1) if upper else range(0, k + 1)
+    terms = [lg - math.lgamma(i + 1) - math.lgamma(n - i + 1) + i * lp + (n - i) * lq for i in rng]
+    m = max(terms)
+    return min(1.0, math.exp(m) * sum(math.exp(t - m) for t in terms))
+
+
 def cp_ci(k, n, a=0.05):
-    from scipy.stats import beta
+    """Clopper-Pearson interval, found by bisection on the exact binomial tails (no scipy needed)."""
     if n == 0:
         return (None, None)
-    lo = 0.0 if k == 0 else beta.ppf(a / 2, k, n - k + 1)
-    hi = 1.0 if k == n else beta.ppf(1 - a / 2, k + 1, n - k)
-    return (round(float(lo), 4), round(float(hi), 4))
+
+    def solve(f, target, increasing):
+        lo, hi = 0.0, 1.0
+        for _ in range(80):
+            mid = (lo + hi) / 2
+            if (f(mid) < target) == increasing:
+                lo = mid
+            else:
+                hi = mid
+        return (lo + hi) / 2
+    lo = 0.0 if k == 0 else solve(lambda p: _binom_tail(k, n, p, True), a / 2, True)
+    hi = 1.0 if k == n else solve(lambda p: _binom_tail(k, n, p, False), a / 2, False)
+    return (round(lo, 4), round(hi, 4))
 
 
 def cell(t):

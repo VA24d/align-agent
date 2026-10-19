@@ -1,6 +1,6 @@
 {
   "name": "align-write-through",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "After every tool call, append the net diff of each file the model has seen that changed since (sed -i, scripts, formatters, git), plus remaining uses in other files of changed definitions. Append-only, so the prompt cache is kept.",
   "license": "MIT",
   "keywords": ["stale", "write-through", "diff", "context", "prompt-cache"]
