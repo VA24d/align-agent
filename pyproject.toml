@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "align-agent"
-version = "0.4.7"
+version = "0.4.8"
 description = "Find edits a coding agent made against a stale view of a file, and keep agents' views current with a write-through hook (Claude Code, any hook system, any MCP client, mini-swe-agent)"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.10"
 dependencies = []
 

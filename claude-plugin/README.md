@@ -64,4 +64,4 @@ copied into `scripts/_lib` by `tool/build.sh`).
 
 ## Licence
 
-MIT.
+Apache 2.0.
