@@ -79,11 +79,11 @@ def broke(path, old, new):
     """'line N: message' if `new` fails to parse and `old` parsed; None if fine, unknown or already broken."""
     if os.environ.get("ALIGN_SYNTAX") == "0":
         return None
-    if _check(path, new) is None:
+    bad = _check(path, new)
+    if bad is None:
         return None
     if old is not None and _check(path, old) is not None:
         return None
-    bad = _check(path, new)
     msg = f"line {bad[0]}: {bad[1]}" if bad[0] else bad[1]
     if path.lower().endswith(".py"):  # parsed by the interpreter that runs the hook, not the project's
         msg += f"; checked with Python {sys.version_info.major}.{sys.version_info.minor}"
