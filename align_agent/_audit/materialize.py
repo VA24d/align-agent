@@ -41,6 +41,7 @@ from common import WORK, dump  # noqa: E402
 from excerpts import items as all_items, load_trajs  # noqa: E402
 from score import output_views  # noqa: E402
 
+OTHER_WRITERS = ("sidechain:", "subagent:", "parent:", "peer:")  # mech prefixes of writes other agents made
 NUM_LINE = re.compile(r"^\s*(\d+)\t(.*)$")
 NUM_COLON = re.compile(r"^(\d+)[:-](.*)$")
 
@@ -134,12 +135,25 @@ def strip_numbers(text):
     return "\n".join(out)
 
 
+def _within(hay, needle):
+    """`needle` occurs in `hay` as whole tokens: `x = 1` is not in `x = 10`, nor `foo` in `foobar`."""
+    k = hay.find(needle)
+    while k != -1:
+        before = hay[k - 1] if k else ""
+        after = hay[k + len(needle)] if k + len(needle) < len(hay) else ""
+        if not (needle[0].isalnum() or needle[0] == "_") or not (before.isalnum() or before == "_"):
+            if not (needle[-1].isalnum() or needle[-1] == "_") or not (after.isalnum() or after == "_"):
+                return True
+        k = hay.find(needle, k + 1)
+    return False
+
+
 def contains(hay, needle):
     if not needle or not hay:
         return False
-    if needle in hay:
+    if _within(hay, needle):
         return True
-    return norm(needle) in norm(hay) if len(norm(needle)) >= 4 else False
+    return _within(norm(hay), norm(needle)) if len(norm(needle)) >= 4 else False
 
 
 def lines_of(s):
@@ -407,6 +421,20 @@ def same_command(a, b):
 
 
 def classify(item, t):
+    """(class, reason, evidence) for one hazard. Claude Code's own staleness signals, where the log has
+    them, override the static rules: a refused edit was caught (CAUGHT-BY-HARNESS, not a failure the
+    agent suffered), and an edit it applied while noting other changes on disk was stale but harmless."""
+    e = t["steps"][item["step"]]["ops"][item["op"]]
+    if e.get("harness") == "refused-stale":
+        return "CAUGHT-BY-HARNESS", "Claude Code refused the edit: the file was modified since the agent read it", \
+            {"e_mech": e.get("mech"), "e_landed": e.get("landed"), "e_ev": e.get("ev")}
+    cls, why, ev = _classify(item, t)
+    if e.get("harness") == "noted-stale" and not cls.startswith("MATERIALIZED"):
+        return "BENIGN-HARNESS-NOTED", "Claude Code applied the edit and noted other changes on disk (static: " + cls + ")", ev
+    return cls, why, ev
+
+
+def _classify(item, t):
     steps = t["steps"]
     s_e = steps[item["step"]]
     e = s_e["ops"][item["op"]]
@@ -581,6 +609,15 @@ def classify(item, t):
     if removed_hit and not added_hit:
         if ev["later"].startswith("applied"):
             return "INDETERMINATE", "anchor overlaps text an unseen write removed, yet the edit's new text appears later", ev
+        s_r = removed_hit[0][0]
+        foreign = [o for o in s_r["ops"] if o["op"] == "W" and o["path"] == item["path"]
+                   and str(o.get("mech") or "").startswith(OTHER_WRITERS)]
+        if foreign:
+            # another agent removed the anchor: the agent could not have known, so the failure is the stale view's
+            who = foreign[0]["mech"].split(":")[0]
+            if loud:
+                return "MATERIALIZED-M1", f"anchor removed by a {who} write at step {s_r['i']} the agent never saw; the edit was rejected", ev
+            return "MATERIALIZED-M2", f"anchor removed by a {who} write at step {s_r['i']} the agent never saw; the edit silently matched nothing", ev
         if loud:
             return "FAILED-OWN-WRITE", f"anchor removed by the agent's own write at step {removed_hit[0][0]['i']}; the edit was rejected", ev
         return "FAILED-OWN-WRITE", f"anchor removed by the agent's own write at step {removed_hit[0][0]['i']}; the edit silently matched nothing", ev

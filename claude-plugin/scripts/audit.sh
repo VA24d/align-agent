@@ -42,6 +42,7 @@ align_command() {
 }
 
 AA="$(align_command)" || exit 1
+mkdir -p "$CACHE" || exit 1  # last_error.txt goes here, also when align-agent came from PATH, uvx or pipx
 found=0
 for d in "$HOME/.claude/projects" "$HOME/.codex/sessions"; do
   [ -d "$d" ] || continue
