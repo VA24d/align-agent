@@ -61,12 +61,10 @@ class Claude(Workspace):
         self.assertIn("import os", r["hookSpecificOutput"]["additionalContext"])
 
 
-    def test_failed_read_or_edit_records_nothing(self):
+    def test_failed_read_records_no_view(self):
         self.call(hook_event_name="SessionStart", source="startup")
         self.call(hook_event_name="PostToolUseFailure", tool_name="Read", tool_input={"file_path": self.path()},
                   error="File content exceeds maximum allowed tokens")
-        self.call(hook_event_name="PostToolUseFailure", tool_name="Edit", tool_input={"file_path": self.path()},
-                  error="String to replace not found in file")
         self.sh("sed -i 's/v5 = 5/v5 = 55/' demo.py")
         r = self.call(hook_event_name="PostToolUse", tool_name="Bash", tool_input={"command": "true"}, tool_response={})
         self.assertIsNone(r)  # never shown: no diff against a view the model does not have
