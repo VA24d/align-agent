@@ -61,6 +61,17 @@ class Claude(Workspace):
         self.assertIn("import os", r["hookSpecificOutput"]["additionalContext"])
 
 
+    def test_failed_read_or_edit_records_nothing(self):
+        self.call(hook_event_name="SessionStart", source="startup")
+        self.call(hook_event_name="PostToolUseFailure", tool_name="Read", tool_input={"file_path": self.path()},
+                  error="File content exceeds maximum allowed tokens")
+        self.call(hook_event_name="PostToolUseFailure", tool_name="Edit", tool_input={"file_path": self.path()},
+                  error="String to replace not found in file")
+        self.sh("sed -i 's/v5 = 5/v5 = 55/' demo.py")
+        r = self.call(hook_event_name="PostToolUse", tool_name="Bash", tool_input={"command": "true"}, tool_response={})
+        self.assertIsNone(r)  # never shown: no diff against a view the model does not have
+
+
 class Codex(Workspace):
     def test_move_to_and_crlf_patch_paths(self):
         text = "*** Begin Patch\r\n*** Update File: a.py\r\n*** Move to: b.py\r\n@@\r\n-x\r\n+y\r\n*** End Patch\r\n"
@@ -253,3 +264,4 @@ class Launcher(Workspace):
 
 if __name__ == "__main__":
     unittest.main()
+
